@@ -1,4 +1,4 @@
-# TeleTriage v2
+# TeleTriage
 
 **Hierarchical multi-tier telecom fault-resolution engine.**
 A rebuild of the original college project — this time with production-grade retrieval (hybrid BM25 + dense + cross-encoder rerank), modern embeddings, and honest evaluation.
