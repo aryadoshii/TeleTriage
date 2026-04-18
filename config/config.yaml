@@ -1,0 +1,71 @@
+# TeleTriage runtime configuration
+# Thresholds here are STARTING POINTS - calibrate them on a held-out validation set
+# (see evaluation/ when Phase 4 is built)
+
+app:
+  name: teletriage
+  version: "0.2.0"
+
+# Paths (relative to project root)
+paths:
+  cache_file: data/sample_cache.json
+  knowledge_base: data/sample_kb.jsonl
+  faiss_index_dir: data/indexes/
+  log_dir: logs/
+
+# ─── Tier 1: Cache-Augmented Generation (CAG) ─────────────────────────
+# The fast path. O(1) exact lookup, then fuzzy match as safety net.
+cache_tier:
+  enabled: true
+  # Fuzzy matching only kicks in if exact/normalized match fails.
+  # rapidfuzz returns scores 0-100. 85 = very similar phrasing,
+  # 90 = near-identical. Start strict; loosen after you measure.
+  fuzzy_threshold: 90
+  # Only return a cache hit if confidence >= this. Below = delegate.
+  min_confidence: 0.85
+
+# ─── Tier 2: Retrieval-Augmented Generation (RAG) ─────────────────────
+# Hybrid retrieval: BM25 (sparse) + dense (embeddings) fused with RRF,
+# then re-ranked with a cross-encoder.
+retrieval_tier:
+  enabled: true
+  # Embedding model - BGE-small is the sweet spot for CPU inference.
+  # Alternatives: BAAI/bge-base-en-v1.5 (better, 2x slower)
+  embedder_model: BAAI/bge-small-en-v1.5
+  # Cross-encoder for reranking - adds latency but huge precision gain
+  reranker_model: BAAI/bge-reranker-base
+  # How many candidates to retrieve from each retriever before fusion
+  bm25_top_k: 20
+  dense_top_k: 20
+  # After RRF, how many to send to the reranker (more = slower but better)
+  rerank_top_k: 10
+  # Final top-k returned (usually 1 for this use case)
+  final_top_k: 1
+  # RRF constant - 60 is the standard value from the original RRF paper
+  rrf_k: 60
+  # Reranker score is a logit; > 0 typically means "relevant".
+  # Calibrate on your val set. Starting point: accept if score >= 0.5.
+  min_rerank_score: 0.5
+  min_confidence: 0.70
+
+# ─── Tier 3: Generative Fallback ──────────────────────────────────────
+generative_tier:
+  enabled: true
+  # Primary backend: groq | gemini | local
+  backend: groq
+  # Model names per backend
+  groq_model: llama-3.3-70b-versatile
+  gemini_model: gemini-2.0-flash-exp
+  local_model: Qwen/Qwen2.5-1.5B-Instruct
+  # Generation params
+  max_tokens: 512
+  temperature: 0.2   # low - we want deterministic troubleshooting advice
+  # System prompt defined in code (generative_tier.py) so we can version it
+
+# ─── Observability ────────────────────────────────────────────────────
+observability:
+  log_level: INFO
+  # Log every query + which tier answered + latency + confidence
+  log_queries: true
+  # Dump metrics to disk for later analysis
+  metrics_file: logs/query_metrics.jsonl

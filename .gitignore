@@ -1,0 +1,63 @@
+# Secrets
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# uv
+.uv/
+uv.lock
+
+# Models & large artifacts
+models/
+*.bin
+*.safetensors
+*.onnx
+*.gguf
+.cache/
+
+# FAISS indexes
+*.faiss
+*.index
+
+# Data (keep samples, ignore scraped/processed large files)
+data/raw/
+data/processed/
+data/*.parquet
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Notebooks
+.ipynb_checkpoints/
