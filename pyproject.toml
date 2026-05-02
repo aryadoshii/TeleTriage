@@ -14,25 +14,21 @@ dependencies = [
     "pyyaml>=6.0",
     "typer>=0.12",
     "rich>=13.7",
-
     # Retrieval & embeddings
     "sentence-transformers>=3.0",
     "faiss-cpu>=1.8",
     "rank-bm25>=0.2.2",
     "rapidfuzz>=3.9",          # fast fuzzy string match for CAG
     "numpy>=1.26",
-
     # Generation (all free tiers)
     "groq>=0.11",              # Llama 3.3 70B free
-    "google-generativeai>=0.7",# Gemini free
+    "google-genai>=1.74.0",    # Gemini 2.0 Flash (replaces deprecated google-generativeai)
     "transformers>=4.44",      # local fallback
     "torch>=2.3",
     "accelerate>=0.33",
-
     # Eval
     "rouge-score>=0.1.2",
     "bert-score>=0.3.13",
-
     # Observability
     "structlog>=24.1",
 ]
@@ -73,5 +69,5 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 markers = [
     "slow: loads ML models (BGE-small, bge-reranker-base) — skip with -m 'not slow'",
-    "integration: requires pre-built indexes (run scripts/build_index.py first)",
+    "integration: requires external resources (pre-built indexes or live API keys)",
 ]

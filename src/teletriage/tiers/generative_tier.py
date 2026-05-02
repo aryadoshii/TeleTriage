@@ -1,44 +1,29 @@
 """
-Generative Tier — PHASE 3 STUB.
+Generative Tier — Phase 3 implementation.
 
-Last-resort fallback. When CAG misses AND RAG similarity is below
-threshold, we invoke an LLM to generate an answer from scratch.
+Last-resort fallback.  When CAG misses AND RAG similarity is below threshold,
+we invoke an LLM to generate an answer from scratch (optionally grounded by
+the RAG near-misses — see llm_client.py design decision (1)).
 
-BACKENDS (all free):
-  - groq:   Llama 3.3 70B via Groq Cloud       (PRIMARY - fast, free)
-  - gemini: Gemini 2.0 Flash via Google AI     (BACKUP)
-  - local:  Qwen2.5-1.5B-Instruct (transformers) (OFFLINE FALLBACK)
+BACKENDS (all free, tried in this order):
+  1. Groq:   Llama 3.3 70B — fast, 30 req/min, requires GROQ_API_KEY
+  2. Gemini: Gemini 2.0 Flash — 15 req/min, requires GOOGLE_API_KEY
+  3. Local:  Qwen2.5-1.5B-Instruct — no key, slower, ~3 GB on disk
 
-PROMPT ENGINEERING NOTES:
-  - Keep the system prompt SHORT. Every token eats context.
-  - INCLUDE the original user query verbatim (don't rephrase).
-  - OPTIONAL: pass top-k retrieved context from RAG as grounding
-    even though retrieval similarity was below threshold — partial
-    context often improves generation quality meaningfully.
-  - Set temperature LOW (0.1-0.3). This is troubleshooting, not
-    creative writing. We want consistent, deterministic advice.
-  - REQUEST structured output: "Give a concise, numbered list of
-    diagnostic steps." Long prose responses are hard to evaluate
-    and hard for a network engineer to act on.
-
-CONFIDENCE FOR GENERATIVE OUTPUT:
-  This is the hardest part. You CAN'T trust the LLM's self-reported
-  confidence. Options (all imperfect):
-    1. Fixed low confidence (e.g. 0.60) - honest that we don't know
-    2. Log-probability of generated tokens (if API exposes it)
-    3. Self-consistency: generate N times, measure agreement
-    4. Ask a second LLM to grade the answer (LLM-as-judge)
-  Start with option 1. Explore others in Phase 4.
-
-IMPLEMENTATION ORDER:
-  1. generation/llm_client.py  - unified interface over groq/gemini/local
-  2. Prompt template (below, in SYSTEM_PROMPT)
-  3. Wire up in GenerativeTier.answer()
-  4. Add retry logic with backend fallback (groq -> gemini -> local)
+Startup:
+  Backends are registered at __init__ time based on which API keys are
+  configured in .env.  No network calls happen until the first answer().
 """
 from __future__ import annotations
 
 from teletriage.config import get_config
+from teletriage.generation.llm_client import (
+    GENERATIVE_CONFIDENCE,
+    AllBackendsFailedError,
+    FallbackClient,
+    build_user_prompt,
+    make_llm_client,
+)
 from teletriage.tiers.base import BaseTier
 from teletriage.types import Query, TierName, TierResult
 
@@ -58,54 +43,65 @@ class GenerativeTier(BaseTier):
 
     def __init__(self) -> None:
         cfg = get_config()
-        # Generative is the LAST tier - it must always answer.
-        # So min_confidence is effectively 0 (we never delegate).
+        # Generative is the LAST tier — it must always produce an answer.
+        # min_confidence=0.0 means the router never delegates past this tier.
         self.min_confidence = 0.0
         self._cfg = cfg.generative_tier
-        # TODO Phase 3: initialize client
-        # self._client = make_llm_client(
-        #     backend=self._cfg.backend,
-        #     api_key=cfg.secrets.groq_api_key or cfg.secrets.google_api_key,
-        # )
+
+        self._client: FallbackClient = make_llm_client(
+            groq_api_key=cfg.secrets.groq_api_key,
+            google_api_key=cfg.secrets.google_api_key,
+            groq_model=self._cfg.groq_model,
+            gemini_model=self._cfg.gemini_model,
+            local_model=self._cfg.local_model,
+        )
 
     def answer(self, query: Query) -> TierResult:
         start = self._now()
 
-        # TODO Phase 3: implement. Pseudocode:
-        #
-        # try:
-        #     output = self._client.generate(
-        #         system=SYSTEM_PROMPT,
-        #         user=query.text,
-        #         max_tokens=self._cfg.max_tokens,
-        #         temperature=self._cfg.temperature,
-        #     )
-        # except RateLimitError:
-        #     # Fall back to secondary backend
-        #     output = self._fallback_client.generate(...)
-        #
-        # return TierResult(
-        #     tier=self.tier_name,
-        #     answer=output.text,
-        #     confidence=0.60,  # honest - we generated from scratch
-        #     latency_sec=self._now() - start,
-        #     details={
-        #         "model": self._cfg.groq_model,
-        #         "tokens_used": output.tokens,
-        #         "finish_reason": output.finish_reason,
-        #     },
-        # )
+        # Retrieve any near-miss context that RAG surfaced but didn't
+        # trust enough to answer with directly.  See llm_client.py
+        # design decision (1) for why we use this even below threshold.
+        retrieved_context: list[dict] = query.metadata.get("retrieved_context", [])
+        user_prompt = build_user_prompt(query.text, retrieved_context)
 
-        # Placeholder so the system runs end-to-end today
+        try:
+            output = self._client.generate(
+                system=SYSTEM_PROMPT,
+                user=user_prompt,
+                max_tokens=self._cfg.max_tokens,
+                temperature=self._cfg.temperature,
+            )
+        except AllBackendsFailedError as exc:
+            # This should almost never happen because LocalQwen is always
+            # available — but if it does (e.g. missing model weights), we
+            # must still return a TierResult, never raise.
+            elapsed = self._now() - start
+            return TierResult(
+                tier=self.tier_name,
+                answer=(
+                    "All LLM backends failed.  "
+                    "Please check API keys in .env and ensure the local "
+                    "Qwen model weights are downloaded."
+                ),
+                confidence=0.0,
+                latency_sec=elapsed,
+                details={"error": str(exc), "status": "all_backends_failed"},
+            )
+
         return TierResult(
             tier=self.tier_name,
-            answer=(
-                f"[GENERATIVE TIER NOT YET IMPLEMENTED — Phase 3]\n"
-                f"Query was: {query.text!r}\n"
-                f"Configure GROQ_API_KEY in .env and implement "
-                f"teletriage.generation.llm_client to enable."
-            ),
-            confidence=0.60,
+            answer=output.text,
+            # Fixed 0.60 — honest acknowledgement that this is generated,
+            # not retrieved from a verified knowledge base.
+            # See llm_client.py design decision (2) for upgrade paths.
+            confidence=GENERATIVE_CONFIDENCE,
             latency_sec=self._now() - start,
-            details={"status": "stub"},
+            details={
+                "backend": output.backend,
+                "model": output.model,
+                "tokens_used": output.tokens_used,
+                "finish_reason": output.finish_reason,
+                "retrieved_context_docs": len(retrieved_context),
+            },
         )
