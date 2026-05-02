@@ -71,3 +71,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+markers = [
+    "slow: loads ML models (BGE-small, bge-reranker-base) — skip with -m 'not slow'",
+    "integration: requires pre-built indexes (run scripts/build_index.py first)",
+]
