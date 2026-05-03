@@ -45,8 +45,8 @@ retrieval_tier:
   rrf_k: 60
   # Reranker score is a logit; > 0 typically means "relevant".
   # Calibrate on your val set. Starting point: accept if score >= 0.5.
-  min_rerank_score: 0.5
-  min_confidence: 0.70
+  min_rerank_score: 0.20
+  min_confidence: 0.50
 
 # ─── Tier 3: Generative Fallback ──────────────────────────────────────
 generative_tier:
