@@ -64,3 +64,5 @@ Thumbs.db
 
 # Notebooks
 .ipynb_checkpoints/
+data/real_kb.jsonl
+data/real_cache_candidates.jsonl
