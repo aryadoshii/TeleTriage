@@ -38,6 +38,9 @@ models/
 data/raw/
 data/processed/
 data/*.parquet
+data/raw_zips/
+data/real_kb.jsonl
+data/real_cache_candidates.jsonl
 
 # Logs
 logs/

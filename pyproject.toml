@@ -31,6 +31,9 @@ dependencies = [
     "bert-score>=0.3.13",
     # Observability
     "structlog>=24.1",
+    # Phase 5: real data pipeline
+    "python-docx>=1.1",        # DOCX text extraction (3GPP specs)
+    "datasketch>=1.6",         # MinHash LSH deduplication
 ]
 
 [dependency-groups]
