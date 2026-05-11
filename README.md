@@ -1,6 +1,6 @@
 # TeleTriage
 
-**Hierarchical multi-tier telecom fault-resolution engine.**
+**Confidence-Calibrated Multi-Tier AI Fault Resolution System.**
 
 A ground-up rebuild of a college project — this time with production-grade hybrid retrieval (BM25 + dense + cross-encoder rerank), calibrated confidence thresholds backed by measurement, and a real evaluation harness.
 
