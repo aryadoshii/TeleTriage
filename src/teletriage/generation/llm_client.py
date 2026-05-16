@@ -257,7 +257,7 @@ class GeminiClient:
     """
     Google Gemini 2.0 Flash via the google-genai SDK (v1+).
 
-    Free tier: 15 req/min, 1M tokens/day on gemini-2.0-flash-exp.
+    Free tier: 15 req/min, 1M tokens/day on gemini-2.0-flash.
     Uses the new google.genai package (google-generativeai is deprecated).
 
     Retry policy: ServerError (5xx) → retry with backoff.
@@ -267,7 +267,7 @@ class GeminiClient:
     MAX_RETRIES = 3
     BASE_WAIT_SEC = 1.0
 
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash-exp") -> None:
+    def __init__(self, api_key: str, model: str = "gemini-2.0-flash") -> None:
         if not api_key:
             raise BackendUnavailableError("GeminiClient: api_key is empty")
         from google import genai
@@ -485,7 +485,7 @@ def make_llm_client(
     groq_api_key: str = "",
     google_api_key: str = "",
     groq_model: str = "llama-3.3-70b-versatile",
-    gemini_model: str = "gemini-2.0-flash-exp",
+    gemini_model: str = "gemini-2.0-flash",
     local_model: str = "Qwen/Qwen2.5-1.5B-Instruct",
 ) -> FallbackClient:
     """

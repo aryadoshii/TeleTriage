@@ -50,10 +50,10 @@ import re
 import sys
 import time
 from pathlib import Path
+from typing import Protocol
 
 import typer
 from dotenv import load_dotenv
-from groq import Groq, RateLimitError
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
@@ -61,6 +61,53 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 app = typer.Typer(add_completion=False)
 console = Console()
+
+
+class LLMBackend(Protocol):
+    def complete(self, system: str, user: str) -> str: ...
+
+
+class GroqBackend:
+    def __init__(self, api_key: str, model: str, temperature: float, max_tokens: int) -> None:
+        from groq import Groq
+        self._client = Groq(api_key=api_key)
+        self._model = model
+        self._temperature = temperature
+        self._max_tokens = max_tokens
+
+    def complete(self, system: str, user: str) -> str:
+        resp = self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=self._temperature,
+            max_tokens=self._max_tokens,
+        )
+        return resp.choices[0].message.content or ""
+
+
+class GeminiBackend:
+    def __init__(self, api_key: str, model: str, temperature: float, max_tokens: int) -> None:
+        from google import genai
+        self._client = genai.Client(api_key=api_key)
+        self._model = model
+        self._temperature = temperature
+        self._max_tokens = max_tokens
+
+    def complete(self, system: str, user: str) -> str:
+        from google.genai import types as gtypes
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=user,
+            config=gtypes.GenerateContentConfig(
+                system_instruction=system,
+                temperature=self._temperature,
+                max_output_tokens=self._max_tokens,
+            ),
+        )
+        return response.text or ""
 
 # ─── Prompt ──────────────────────────────────────────────────────────────────
 
@@ -152,15 +199,14 @@ def _parse_json_array(text: str) -> list[dict] | None:
 
 
 def _generate_qa(
-    client: Groq,
+    backend: LLMBackend,
     chunk_doc: dict,
     n: int,
-    model: str,
     grounding_threshold: float,
     max_retries: int = 2,
 ) -> list[dict]:
     """
-    Call Groq to generate n Q&A pairs for chunk_doc.
+    Generate n Q&A pairs for chunk_doc via the given backend.
     Retries once on transient errors.  Rate limit errors propagate up.
     Returns only pairs that pass the grounding check.
     """
@@ -172,16 +218,7 @@ def _generate_qa(
 
     for attempt in range(max_retries + 1):
         try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
-                ],
-                temperature=0.4,   # slight creativity to vary phrasings
-                max_tokens=768,
-            )
-            raw = resp.choices[0].message.content or ""
+            raw = backend.complete(SYSTEM_PROMPT, user_msg)
             pairs = _parse_json_array(raw)
             if not pairs:
                 if attempt < max_retries:
@@ -203,9 +240,18 @@ def _generate_qa(
                 })
             return results
 
-        except RateLimitError:
-            raise  # propagate — caller handles rate limiting
-        except Exception:
+        except Exception as exc:
+            # Re-raise rate limit / quota errors so caller can handle them
+            exc_str = str(exc).lower()
+            exc_name = type(exc).__name__
+            if (
+                "RateLimit" in exc_name
+                or "rate_limit" in exc_str
+                or "429" in exc_str
+                or "resource_exhausted" in exc_str
+                or "quota" in exc_str
+            ):
+                raise
             if attempt < max_retries:
                 time.sleep(2 ** attempt)
             else:
@@ -252,19 +298,40 @@ def main(
     max_chunks: int = typer.Option(0, "--max-chunks", help="Cap chunks processed (0 = all)"),
     sample_rate: float = typer.Option(1.0, "--sample-rate", help="Random fraction of chunks to process"),
     grounding_threshold: float = typer.Option(0.60, "--grounding-threshold"),
-    groq_model: str = typer.Option("llama-3.3-70b-versatile", "--model"),
-    groq_rpm: int = typer.Option(28, "--groq-rpm", help="Groq requests-per-minute limit"),
+    backend: str = typer.Option("groq", "--backend", help="LLM backend: groq or gemini"),
+    groq_model: str = typer.Option("llama-3.3-70b-versatile", "--groq-model"),
+    gemini_model: str = typer.Option("gemini-2.0-flash", "--gemini-model"),
+    rpm: int = typer.Option(0, "--rpm", help="Requests-per-minute limit (0 = backend default: groq=28, gemini=15)"),
     seed: int = typer.Option(42, "--seed"),
 ) -> None:
     """
-    Generate Q&A pairs from real_kb.jsonl chunks via Groq.
+    Generate Q&A pairs from real_kb.jsonl chunks via Groq or Gemini.
     Output goes to real_cache_candidates.jsonl for human review.
     """
     load_dotenv()
-    api_key = os.getenv("GROQ_API_KEY", "")
-    if not api_key:
-        console.print("[red]GROQ_API_KEY not set in .env[/red]")
+
+    if backend not in ("groq", "gemini"):
+        console.print(f"[red]Unknown backend '{backend}'. Choose groq or gemini.[/red]")
         raise typer.Exit(1)
+
+    if backend == "groq":
+        api_key = os.getenv("GROQ_API_KEY", "")
+        if not api_key:
+            console.print("[red]GROQ_API_KEY not set in .env[/red]")
+            raise typer.Exit(1)
+        model_name = groq_model
+        default_rpm = 28
+        llm: LLMBackend = GroqBackend(api_key, groq_model, temperature=0.4, max_tokens=768)
+    else:
+        api_key = os.getenv("GOOGLE_API_KEY", "")
+        if not api_key:
+            console.print("[red]GOOGLE_API_KEY not set in .env[/red]")
+            raise typer.Exit(1)
+        model_name = gemini_model
+        default_rpm = 15
+        llm = GeminiBackend(api_key, gemini_model, temperature=0.4, max_tokens=768)
+
+    effective_rpm = rpm if rpm > 0 else default_rpm
 
     if not input.exists():
         console.print(f"[red]Input file not found: {input}[/red]")
@@ -284,14 +351,15 @@ def main(
         chunks = chunks[:max_chunks]
 
     console.print(f"\n[bold]TeleTriage — Synthetic Q&A Generation[/bold]")
+    console.print(f"  Backend:           {backend}")
     console.print(f"  Chunks to process: {len(chunks)}")
     console.print(f"  Q&A per chunk:     {qa_per_chunk}")
-    console.print(f"  Model:             {groq_model}")
+    console.print(f"  Model:             {model_name}")
+    console.print(f"  RPM limit:         {effective_rpm}")
     console.print(f"  Grounding thresh:  {grounding_threshold}")
     console.print(f"  Output:            {out}\n")
 
-    client = Groq(api_key=api_key)
-    limiter = RateLimiter(groq_rpm)
+    limiter = RateLimiter(effective_rpm)
 
     n_generated = 0
     n_grounded = 0
@@ -317,21 +385,34 @@ def main(
             limiter.wait()
             try:
                 pairs = _generate_qa(
-                    client,
+                    llm,
                     chunk_doc,
                     n=qa_per_chunk,
-                    model=groq_model,
                     grounding_threshold=grounding_threshold,
                 )
-            except RateLimitError:
-                console.print("[yellow]  Rate limit hit — sleeping 60s[/yellow]")
-                time.sleep(60)
-                pairs = []
-                n_errors += 1
             except Exception as exc:
+                exc_str = str(exc).lower()
+                exc_name = type(exc).__name__
+                is_quota = (
+                    "RateLimit" in exc_name
+                    or "rate_limit" in exc_str
+                    or "429" in exc_str
+                    or "resource_exhausted" in exc_str
+                    or "quota" in exc_str
+                )
+                if is_quota:
+                    # Hard quota exhausted — stop immediately rather than waste time
+                    if "limit: 0" in str(exc) or "per_day" in exc_str or "per day" in exc_str:
+                        console.print(f"[red]  Daily quota exhausted for {backend} — stopping.[/red]")
+                        console.print(f"[red]  {exc}[/red]")
+                        break
+                    console.print("[yellow]  Rate limit hit — sleeping 60s[/yellow]")
+                    time.sleep(60)
+                    n_errors += 1
+                    continue
                 console.print(f"[red]  Error on {chunk_doc['id']}: {exc}[/red]")
                 n_errors += 1
-                pairs = []
+                continue
 
             for pair in pairs:
                 n_generated += 1
@@ -353,8 +434,6 @@ def main(
     with open(out, "w") as fh:
         for row in results:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    grounded_only = [r for r in results if r["answer_in_chunk"]]
 
     console.print(f"\n[bold]Results[/bold]")
     console.print(f"  Chunks processed:  {len(chunks)}")

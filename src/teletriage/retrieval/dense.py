@@ -97,6 +97,10 @@ class DenseRetriever:
         Indexed text = question + " " + answer — same corpus text as BM25
         for consistent coverage across both retrievers.
         """
+        if not docs:
+            index = faiss.IndexFlatIP(embedder.dim)
+            return cls(index, [], embedder)
+
         corpus_texts = [f"{d['question']} {d['answer']}" for d in docs]
         embeddings = embedder.encode_corpus(corpus_texts)  # (N, dim) float32
 

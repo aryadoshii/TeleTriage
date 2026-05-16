@@ -55,7 +55,7 @@ generative_tier:
   backend: groq
   # Model names per backend
   groq_model: llama-3.3-70b-versatile
-  gemini_model: gemini-2.0-flash-exp
+  gemini_model: gemini-2.0-flash
   local_model: Qwen/Qwen2.5-1.5B-Instruct
   # Generation params
   max_tokens: 512

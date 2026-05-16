@@ -57,7 +57,7 @@ class GenerativeTierConfig(BaseModel):
     enabled: bool = True
     backend: Literal["groq", "gemini", "local"] = "groq"
     groq_model: str = "llama-3.3-70b-versatile"
-    gemini_model: str = "gemini-2.0-flash-exp"
+    gemini_model: str = "gemini-2.0-flash"
     local_model: str = "Qwen/Qwen2.5-1.5B-Instruct"
     max_tokens: int = 512
     temperature: float = 0.2
