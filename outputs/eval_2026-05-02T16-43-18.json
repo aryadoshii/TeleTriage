@@ -1,0 +1,472 @@
+{
+  "timestamp": "2026-05-02T16:43:18.023695+00:00",
+  "system_version": "0.2.0",
+  "n_queries": 20,
+  "overall": {
+    "rouge_l_mean": 0.1527,
+    "rouge_l_median": 0.1468,
+    "bertscore_f1_mean": 0.7898,
+    "bertscore_f1_median": 0.7881,
+    "p50_sec": 1.458,
+    "p95_sec": 1.7344,
+    "p99_sec": 1.7753,
+    "mean_sec": 1.4552,
+    "min_sec": 1.0728,
+    "max_sec": 1.7855
+  },
+  "tier_distribution": {
+    "cache": {
+      "count": 0,
+      "pct": 0.0
+    },
+    "retrieval": {
+      "count": 0,
+      "pct": 0.0
+    },
+    "generative": {
+      "count": 20,
+      "pct": 100.0
+    },
+    "none": {
+      "count": 0,
+      "pct": 0.0
+    }
+  },
+  "per_tier": {
+    "generative": {
+      "rouge_l_mean": 0.1527,
+      "rouge_l_median": 0.1468,
+      "bertscore_f1_mean": 0.7898,
+      "bertscore_f1_median": 0.7881,
+      "p50_sec": 1.458,
+      "p95_sec": 1.7344,
+      "p99_sec": 1.7753,
+      "mean_sec": 1.4552,
+      "min_sec": 1.0728,
+      "max_sec": 1.7855,
+      "n": 20
+    }
+  },
+  "per_query": [
+    {
+      "query_id": "eval_001",
+      "query_text": "UE keeps reselecting to 3G even when LTE coverage is adequate",
+      "reference": "Idle-mode reselection to 3G when LTE is available is driven by cell selection/reselection parameters. Check: (1) SIB3/SIB5 \u2014 thresh-X-high and thresh-X-low for inter-RAT reselection. (2) RSRP of serving LTE cell \u2014 if below s-IntraSearchP the UE starts measuring neighbours. (3) IRAT priority configuration \u2014 if 3G cells have higher absolute priority they will be selected. (4) UE capability \u2014 is VoLTE supported? If not, UE may be configured to prefer UTRAN for CS domain. Review idle-mode measurement parameters in RRC SIB broadcast.",
+      "prediction": "Most likely root cause: The UE is experiencing poor LTE signal quality or interference, causing it to reselect to 3G.\n\nDiagnostic steps:\n1. Check the RSRP and RSRQ values of the serving LTE cell to determine signal strength and quality.\n2. Verify the SINR values to identify potential interference issues.\n3. Analyze the UE's measurement reports to determine the criteria for cell reselection.\n4. Compare the LTE and 3G signal strengths to ensure the UE is not preferentially selecting 3G due to configuration or biasing issues.\n5. Review the eNodeB and UE logs for any error messages or anomalies related to cell reselection.\n\nRemediation:\n1. Optimize the LTE cell's coverage and capacity by adjusting antenna parameters or adding new sites.\n2. Implement interference mitigation techniques, such as adjusting neighboring cell frequencies or implementing CoMP.\n3. Adjust the UE's cell reselection parameters or biasing settings to prioritize LTE over 3G.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.7317542500022682,
+      "rouge_l": 0.16666666666666666,
+      "bertscore_f1": 0.792256772518158,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 361,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1731.8
+    },
+    {
+      "query_id": "eval_002",
+      "query_text": "Secondary cell addition for carrier aggregation fails silently",
+      "reference": "When SCell addition fails without explicit failure: (1) Check RRCConnectionReconfiguration \u2014 is SCell configuration present and UE-NR/UE-EUTRA-Capability confirming CA band combination support? (2) Verify SCell is in the active neighbour relation list of PCell. (3) SCell RSRP threshold for addition (A4/A6 event configuration). (4) X2 interface between cells \u2014 SCell addition uses X2 for load information. (5) SCell scheduler load \u2014 may reject addition if PRB utilization is too high. Check eNB counters for CA addition attempts vs successes.",
+      "prediction": "1. Most likely root cause: The secondary cell addition for carrier aggregation is failing due to insufficient signal strength or quality, possibly caused by poor RSRP or SINR levels on the secondary cell.\n2. Diagnostic steps: \n    1. Check the RSRP and SINR levels of the primary and secondary cells to ensure they meet the minimum requirements for carrier aggregation.\n    2. Verify the secondary cell configuration, including its frequency, bandwidth, and PCI, to ensure it matches the expected settings.\n    3. Analyze the eNodeB logs for any error messages related to secondary cell addition or carrier aggregation.\n    4. Use drive test tools to measure the RF conditions and cell coverage in the area where the failure is occurring.\n    5. Check the PDN gateway and Serving Gateway configurations to ensure they are properly set up to support carrier aggregation.\n3. Remediation: \n    1. Adjust the secondary cell configuration, such as its transmit power or antenna settings, to improve its signal strength and quality.\n    2. Optimize the cell planning and neighbor list configuration to ensure proper handover and carrier aggregation operation.\n    3. Perform a software upgrade or patching on the eNodeB to resolve any known issues related to carrier aggregation or secondary cell addition.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.7855319579975912,
+      "rouge_l": 0.11428571428571428,
+      "bertscore_f1": 0.7534129023551941,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 416,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1785.5
+    },
+    {
+      "query_id": "eval_003",
+      "query_text": "PDCP SDU discard rate spiking on uplink for one cell sector",
+      "reference": "High PDCP discard indicates packets are being dropped before transmission due to buffer overflow or discard timer expiry. Steps: (1) Check uplink SINR \u2014 poor radio quality causes HARQ retransmissions that back up the PDCP buffer. (2) UE transmit power headroom (PHR) \u2014 if UE is power-limited it cannot retransmit. (3) Uplink scheduler \u2014 is UE getting sufficient resource grants? (4) PDCP discard timer configuration \u2014 may be too aggressive. (5) Check for uplink interference source (PIM, external). Correlate with HARQ BLER and PHR statistics in the RRM counters.",
+      "prediction": "1. Most likely root cause: The high PDCP SDU discard rate on uplink for one cell sector is likely due to poor radio conditions, such as low SINR or high interference, causing excessive packet errors and retransmissions.\n\n2. Diagnostic steps: \n1. Check the cell's RSRP and RSRQ values to assess the signal strength and quality.\n2. Analyze the uplink traffic volume and packet delay to identify any congestion issues.\n3. Review the eNodeB's performance metrics, such as packet loss and retransmission rates.\n4. Inspect the cell's neighbor list and handover parameters to ensure proper handover procedures.\n5. Perform a drive test or use a network scanner to identify any external interference sources.\n\n3. Remediation: \n1. Optimize the cell's antenna alignment and configuration to improve the signal strength and reduce interference.\n2. Adjust the eNodeB's uplink power control parameters to mitigate packet errors and retransmissions.\n3. Consider reconfiguring the cell's neighbor list and handover parameters to improve handover performance and reduce packet discards.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.3324738749943208,
+      "rouge_l": 0.14173228346456693,
+      "bertscore_f1": 0.787814736366272,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 389,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1332.5
+    },
+    {
+      "query_id": "eval_004",
+      "query_text": "Dedicated bearer for streaming video keeps being deactivated mid-session",
+      "reference": "Non-GBR dedicated bearer teardown mid-session: (1) Check PCRF policy \u2014 is a Gx CCA-Update removing the bearer? TDF detection may be reclassifying traffic. (2) Inactivity timer on PGW for dedicated bearers \u2014 may be misconfigured. (3) SGW/PGW resource limits \u2014 bearer table exhaustion causes eviction. (4) UE-initiated bearer modification (QoS downgrade request). (5) Check ESM cause in Deactivate EPS Bearer Context Request. Trace the Gx interface for PCC rule changes correlated with bearer deactivation timestamps.",
+      "prediction": "1. Most likely root cause: The dedicated bearer for streaming video is being deactivated mid-session due to poor radio conditions, such as low RSRP or high interference, causing the eNodeB to release the bearer.\n2. Diagnostic steps: \n    1. Check the RSRP and SINR values for the affected UE to determine the radio conditions.\n    2. Verify the bearer QoS parameters, such as the Guaranteed Bit Rate (GBR) and Maximum Bit Rate (MBR), to ensure they are correctly configured.\n    3. Analyze the eNodeB logs to identify the reason for bearer release.\n    4. Monitor the PDN gateway logs to check for any issues with the PDN connection.\n    5. Perform a network trace to capture the bearer setup and release messages.\n3. Remediation: \n    1. Optimize the radio network by adjusting the antenna tilt, azimuth, or adding new cell sites to improve the RSRP and SINR values.\n    2. Adjust the bearer QoS parameters to ensure they are suitable for the streaming video application.\n    3. Implement a more robust bearer management policy to minimize the impact of radio condition changes on the dedicated bearer.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.2845652499963762,
+      "rouge_l": 0.14062500000000003,
+      "bertscore_f1": 0.7837899327278137,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 407,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1284.6
+    },
+    {
+      "query_id": "eval_005",
+      "query_text": "GTPv2-C signaling delay between MME and SGW causing session setup lag",
+      "reference": "GTPv2-C (S11) delay causes PDN setup latency. Investigate: (1) Round-trip time on S11 path \u2014 run pings between MME and SGW loopback addresses. (2) SGW processing delay \u2014 check SGW CPU and message queue depth during busy hour. (3) Retransmissions on GTPv2-C \u2014 if Create Session Request is retransmitted, S11 RTT exceeds the T3-RESPONSE timer (default 3s). (4) IP routing asymmetry on the S11 VLAN. (5) SGW pool load balancing \u2014 one SGW may be overloaded. Use wireshark/tshark with GTP dissector to measure per-message RTT on the S11 interface.",
+      "prediction": "1. Most likely root cause: The GTPv2-C signaling delay between MME and SGW is likely due to network congestion or high latency on the S11 interface.\n2. Diagnostic steps: \n    1. Check the S11 interface utilization and packet loss using tools like MRTG or SNMP.\n    2. Verify the SGW and MME configuration for correct IP addressing and routing.\n    3. Analyze GTPv2-C signaling logs for error codes or unusual patterns.\n    4. Measure the round-trip time (RTT) between MME and SGW using ping or ICMP.\n    5. Inspect the eNodeB and SGW logs for any related alarms or errors.\n3. Remediation: \n    1. Optimize network routing and QoS policies to prioritize GTPv2-C traffic on the S11 interface.\n    2. Verify and adjust the SGW and MME configuration to ensure correct GTPv2-C parameter settings.\n    3. Consider upgrading network infrastructure or adding redundant links to reduce congestion and latency.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.4799314580013743,
+      "rouge_l": 0.1940928270042194,
+      "bertscore_f1": 0.819591760635376,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 386,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1479.9
+    },
+    {
+      "query_id": "eval_006",
+      "query_text": "SRVCC handover from VoLTE to WCDMA failing during active call",
+      "reference": "SRVCC (Single Radio Voice Call Continuity) failure: (1) Verify SVP (Sv) interface between MME and MSC-Server is up. (2) Check PS-to-CS handover trigger \u2014 B2 measurement event must fire with WCDMA threshold configured. (3) WCDMA cell must be in UE's active neighbour set (verify UTRAN frequency list in SIB6). (4) STN-SR (Session Transfer Number for SR-VCC) must be provisioned in HSS. (5) IMS ATU-STI (Access Transfer Update) must complete before WCDMA bearer is established. Check MME SRVCC counters \u2014 failure cause codes (e.g. target cell unavailable, Sv timeout) will narrow the root cause.",
+      "prediction": "1. Most likely root cause: The SRVCC handover failure is likely due to incorrect configuration of the eNodeB or the Mobile Switching Center (MSC) server, or issues with the PDN connection and bearer setup.\n2. Diagnostic steps: \n    1. Check the eNodeB and MSC logs for error messages related to SRVCC handover.\n    2. Verify the VoLTE and WCDMA network configurations, including the PDN connection and bearer setup.\n    3. Analyze the RAN and core network KPIs, such as RSRP, SINR, and handover success rates.\n    4. Perform a network trace to capture the SRVCC handover procedure and identify the failure point.\n    5. Validate the UE's capability and configuration for SRVCC handover.\n3. Remediation: \n    1. Correct the eNodeB and MSC configurations to ensure proper SRVCC handover setup.\n    2. Optimize the PDN connection and bearer setup to ensure seamless handover.\n    3. Perform a system restart or re-initialization of the affected network elements to ensure the new configuration takes effect.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.5371879160011304,
+      "rouge_l": 0.12549019607843137,
+      "bertscore_f1": 0.786991536617279,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 405,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1537.2
+    },
+    {
+      "query_id": "eval_007",
+      "query_text": "Gx interface timeout causing all new bearer requests to be rejected",
+      "reference": "Gx (PCRF interface) timeout blocks all dynamic PCC rule delivery. Steps: (1) Check Diameter routing \u2014 is the CCR-I reaching the PCRF? Verify Diameter realm routing on the DRA. (2) PCRF health \u2014 CPU, memory, SPR backend response time. (3) CCR timeout value on PGW \u2014 if shorter than PCRF processing time, spurious timeouts occur. (4) Check if PGW is configured with a default-rule fallback for Gx timeout (local policy). If not, all sessions requiring dynamic policy will fail. (5) Capture Diameter traffic on Gx \u2014 look for CCA response codes (5012 = Unable to Deliver). Immediate mitigation: enable local PCC fallback on PGW.",
+      "prediction": "1. Most likely root cause: The Gx interface timeout is likely due to a communication issue between the Policy and Charging Rules Function (PCRF) and the Policy and Charging Enforcement Function (PCEF), causing the PCRF to not respond in time.\n2. Diagnostic steps: \n1. Check the Gx interface configuration and logs for any errors or misconfigurations.\n2. Verify the PCRF and PCEF are reachable and responding to requests.\n3. Analyze the PCRF logs to identify any issues with policy decisions or response delays.\n4. Monitor the Gx interface traffic to detect any packet loss or corruption.\n5. Check the PCRF's system resources and performance to ensure it's not overloaded.\n3. Remediation: \n1. Verify and correct the Gx interface configuration to ensure proper communication between the PCRF and PCEF.\n2. Optimize PCRF performance by adjusting system resources or implementing load balancing if necessary.\n3. Implement a temporary workaround, such as increasing the Gx interface timeout value, until the root cause is resolved.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.2351152499977616,
+      "rouge_l": 0.14393939393939395,
+      "bertscore_f1": 0.7933736443519592,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 371,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1235.1
+    },
+    {
+      "query_id": "eval_008",
+      "query_text": "NAS reject EMM cause 11 affecting subset of inbound roaming subscribers",
+      "reference": "EMM cause 11 (PLMN not allowed) from MME during roaming: (1) Check VPLMN's allowed-PLMN list in MME \u2014 HPLMN PLMN ID may be missing. (2) OCS/PCRF roaming profile \u2014 subscription may not allow this service type for the HPLMN. (3) HSS ULA (Update Location Answer) flags \u2014 check 'PLMN-ODB' bit (Operator Determined Barring). (4) Roaming agreement active and reflected in systems? (5) Does it affect all IMSI ranges from that HPLMN or a subset (may indicate partial profile migration). Correlate MME EMM reject cause codes with specific HPLMN MCC-MNC pairs.",
+      "prediction": "1. Most likely root cause: The NAS reject EMM cause 11, which indicates \"PLMN not allowed\", suggests that the issue is related to the subscriber's home Public Land Mobile Network (PLMN) not being allowed on the visited network.\n2. Diagnostic steps: \n    1. Verify the subscriber's home PLMN and check if it is correctly configured in the visited network's PLMN allow list.\n    2. Check the roaming agreement between the home and visited networks to ensure it is active and correctly provisioned.\n    3. Review the Authentication, Authorization, and Accounting (AAA) logs to confirm the EMM cause 11 reject reason.\n    4. Analyze the subscriber's profile and ensure that the International Mobile Subscriber Identity (IMSI) is correctly provisioned.\n    5. Check for any recent changes to the visited network's configuration that may be causing the issue.\n3. Remediation: \n    1. Update the visited network's PLMN allow list to include the subscriber's home PLMN, if necessary.\n    2. Verify and correct the roaming agreement configuration between the home and visited networks.\n    3. Restart the affected network elements, such as the Mobility Management Entity (MME) or the Serving Gateway (SGW), to ensure the changes take effect.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.629378416997497,
+      "rouge_l": 0.16783216783216784,
+      "bertscore_f1": 0.7799973487854004,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 427,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1629.4
+    },
+    {
+      "query_id": "eval_009",
+      "query_text": "eNB not generating handover decision despite UE sending A3 measurement reports",
+      "reference": "When A3 events are received but no handover is initiated: (1) Verify A3 offset and hysteresis \u2014 if configured too aggressively the UE may trigger A3 but the source eNB disagrees. (2) Check neighbour relation \u2014 target cell must be in ANR table with valid PCI and EARFCN. (3) Target cell load rejection \u2014 X2 HO Request may be rejected by target due to high PRB utilization. (4) X2 interface health between source and target eNB \u2014 HO request may never reach the target. (5) Time-to-trigger (TTT) \u2014 is A3 event sustained for the full TTT before handover is attempted? Enable RRC trace on the source eNB to verify HO decision logic.",
+      "prediction": "1. Most likely root cause: The eNodeB (eNB) is not generating a handover decision due to incorrect handover parameter configuration, such as A3 event thresholds or hysteresis values.\n2. Diagnostic steps: \n    1. Verify the UE's measurement reports, including RSRP and RSRQ values, to ensure they meet the A3 event trigger conditions.\n    2. Check the eNB's handover parameter configuration, including A3 event thresholds, hysteresis, and time-to-trigger values.\n    3. Analyze the eNB's performance metrics, such as handover success and failure rates, to identify potential issues.\n    4. Review the UE's capability and subscription information to ensure it supports handover and has the necessary QoS profile.\n    5. Inspect the eNB's logging and alarm systems for any handover-related errors or warnings.\n3. Remediation: \n    1. Adjust the handover parameter configuration, such as A3 event thresholds or hysteresis values, to optimize handover decision-making.\n    2. Verify the eNB's software and hardware versions are up-to-date and compatible with the UE's capabilities.\n    3. Perform a restart of the affected eNB or re-initialize the handover module to resolve any potential software issues.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.4341224169984343,
+      "rouge_l": 0.14965986394557823,
+      "bertscore_f1": 0.7877001166343689,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 436,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1434.1
+    },
+    {
+      "query_id": "eval_010",
+      "query_text": "TCP sessions over SGi dropped after exactly 5 minutes of inactivity",
+      "reference": "Exact 5-minute TCP idle teardown is a firewall or NAT timeout. (1) Check CGNAT / stateful firewall TCP idle timeout on SGi \u2014 default is often 300s (5 min). Extend or set application-specific timeout. (2) PGW session idle timer \u2014 not typical for TCP but confirm SGW/PGW inactive session timeout. (3) Load balancer session persistence timer. (4) Application keepalive \u2014 if TCP keepalive is not configured, the 5-minute idle hits. Fix: increase firewall TCP idle timer or enable SO_KEEPALIVE on the application. Capture RST origin (client vs server vs CGNAT) with tshark on SGi to confirm.",
+      "prediction": "1. Most likely root cause: The TCP sessions are being terminated due to the PGW's (PDN Gateway) idle timeout setting, which is commonly set to 5 minutes.\n2. Diagnostic steps: \n    1. Check the PGW configuration for the idle timeout setting.\n    2. Verify the TCP session timeout settings on the SGi interface.\n    3. Analyze network logs for any error messages related to session termination.\n    4. Use protocol analyzers to capture and inspect TCP session traffic.\n    5. Review the eNodeB and SGW (Serving Gateway) logs for any relevant information.\n3. Remediation: \n    1. Adjust the PGW's idle timeout setting to a higher value if necessary.\n    2. Implement a keep-alive mechanism for TCP sessions to prevent idle timeouts.\n    3. Update the SGi interface configuration to allow for longer TCP session inactivity periods.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.2288115000046673,
+      "rouge_l": 0.20175438596491227,
+      "bertscore_f1": 0.8062645792961121,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 352,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1228.8
+    },
+    {
+      "query_id": "eval_011",
+      "query_text": "Uplink noise floor elevated on 3 contiguous PRBs suggesting narrowband interference",
+      "reference": "Narrowband interference on specific PRBs is typically external RF or PIM. Steps: (1) Use spectrum analyzer or eNB uplink interference counters to confirm the affected frequency range. (2) PIM check: contiguous PRB pattern near downlink carriers is PIM signature \u2014 run PIM sweep on jumpers, connectors, and antennas. (3) External narrowband interferer (e.g. LTE-M device, IoT gateway) \u2014 use direction-finding / spectrum scan. (4) Check if interference is time-correlated (burst vs constant) to identify source type. (5) Inter-cell interference \u2014 verify ICIC is configured, check if neighbouring cell uses same PRBs at full power.",
+      "prediction": "1. Most likely root cause: The elevated uplink noise floor on the 3 contiguous Physical Resource Blocks (PRBs) is likely due to external narrowband interference from an unknown source.\n2. Diagnostic steps: \n    1. Analyze the interference pattern to determine if it's continuous or intermittent.\n    2. Check the eNodeB's performance metrics, such as RSRP and SINR, to assess the impact on network performance.\n    3. Use spectrum analysis tools to identify the source and characteristics of the interference.\n    4. Inspect nearby cell sites and external radio systems for potential interference sources.\n    5. Review recent changes or additions to the cell site or surrounding environment.\n3. Remediation: \n    1. Identify and eliminate the source of interference, if possible, by coordinating with external entities or adjusting nearby radio systems.\n    2. Consider implementing interference mitigation techniques, such as adaptive interference cancellation or notch filtering.\n    3. Adjust the uplink carrier settings or reconfigure the PRB allocation to minimize the impact of the interference on network performance.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.6390487079988816,
+      "rouge_l": 0.1796875,
+      "bertscore_f1": 0.7997255325317383,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 385,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1639.0
+    },
+    {
+      "query_id": "eval_012",
+      "query_text": "S1-AP reset PDU storm from one eNB causing MME instability",
+      "reference": "Repeated S1-AP RESET from one eNB destabilizes MME UE context. (1) Identify cause IE in RESET \u2014 does eNB report an internal failure, radio link failure, or transport? (2) Check eNB hardware alarms \u2014 baseband restarts cause SCTP association reset. (3) Transport flap: SCTP heartbeat failures trigger RESET. Check interface counters on both sides. (4) Software issue on eNB \u2014 scheduled restart? Check OMC for maintenance windows. (5) MME-side mitigation: implement RESET rate limiting per eNB. Isolate the problematic eNB from the pool temporarily to protect the MME from context churn. Pull SCTP statistics and eNB alarm history from OMC.",
+      "prediction": "1. Most likely root cause: The S1-AP reset PDU storm is likely caused by a misconfigured or faulty eNodeB (eNB) that is sending an excessive number of reset messages to the MME, overwhelming it and causing instability.\n2. Diagnostic steps: \n    1. Check the eNB logs for any error messages or alarms related to S1-AP communication.\n    2. Analyze the MME logs to identify the source of the reset PDU storm and its impact on MME performance.\n    3. Verify the eNB configuration, particularly the S1-AP settings, to ensure they are correct and aligned with the network architecture.\n    4. Use network monitoring tools to capture and analyze the S1-AP traffic between the eNB and MME.\n    5. Check for any recent software or configuration changes on the eNB that may be contributing to the issue.\n3. Remediation: \n    1. Isolate the problematic eNB and temporarily remove it from service to prevent further disruption to the MME.\n    2. Apply the necessary configuration changes or software patches to the eNB to resolve the S1-AP reset issue.\n    3. Perform a thorough test of the eNB's S1-AP functionality to ensure it is operating correctly before reintroducing it into the network.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.6386372909983038,
+      "rouge_l": 0.17508417508417512,
+      "bertscore_f1": 0.7995144724845886,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 439,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1638.6
+    },
+    {
+      "query_id": "eval_013",
+      "query_text": "eSIM remote provisioning fails at LPA profile download with HTTP 403",
+      "reference": "LPA (Local Profile Assistant) HTTP 403 during SM-DP+ profile download: (1) Activation code or confirmation code mismatch \u2014 re-check against SM-DP+ portal. (2) SMDP certificate not trusted by device \u2014 verify root CA chain. (3) Device EID not whitelisted in SM-DP+ operator profile. (4) Order state machine issue: profile may already be in 'downloaded' or 'released' state in SM-DP+ \u2014 check order status via M2M or consumer API. (5) Network connectivity: LPA uses HTTPS to SM-DP+ address \u2014 check DNS resolution and firewall rules on the device connection. Collect LPA logs (AT+CSIM or vendor diagnostic) and SM-DP+ server logs correlated by EID and timestamp.",
+      "prediction": "1. Most likely root cause: The HTTP 403 error during LPA profile download suggests that the eSIM remote provisioning server is encountering an authentication or authorization issue, likely due to incorrect or missing credentials.\n2. Diagnostic steps: \n1. Verify the Subscription Manager Data Preparation (SM-DP) server configuration and credentials.\n2. Check the eSIM profile and ensure it is correctly formatted and matches the expected structure.\n3. Inspect the HTTP request headers and payload for any anomalies or missing authentication tokens.\n4. Review the SM-DP server logs for any error messages related to authentication or authorization.\n5. Validate the eUICC (embedded Universal Integrated Circuit Card) certificate and its trust chain.\n3. Remediation: \n1. Update the SM-DP server configuration with the correct credentials and authentication settings.\n2. Validate and correct the eSIM profile to ensure it conforms to the expected format and structure.\n3. Regenerate and reload the eUICC certificate and its trust chain if necessary, and retry the LPA profile download.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.3298629999990226,
+      "rouge_l": 0.16236162361623616,
+      "bertscore_f1": 0.7884683012962341,
+      "expected_tier": "generative",
+      "tier_match": true,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 369,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1329.9
+    },
+    {
+      "query_id": "eval_014",
+      "query_text": "NB-IoT device cannot complete random access procedure despite strong RSRP",
+      "reference": "NB-IoT RACH failure with good coverage: (1) NPRACH configuration \u2014 check subcarrier spacing, repetition levels, and periodicity in SIB2-NB. (2) Coverage level mismatch \u2014 device may be using wrong coverage enhancement level for its RSRP. (3) Cell capacity: if NPRACH resources are exhausted (congestion), RACH fails silently. (4) Device class: Cat-NB1 vs Cat-NB2 capabilities \u2014 verify device reports correct UE category. (5) Guard band vs in-band vs standalone deployment mode \u2014 device must be configured for the correct NB-IoT deployment type. Check eNB NB-IoT RACH statistics for preamble detection rate and coverage level distribution.",
+      "prediction": "1. Most likely root cause: The NB-IoT device is likely experiencing issues with the uplink synchronization or reception of the Random Access Response (RAR) message, possibly due to poor uplink coverage or high interference.\n\n2. Diagnostic steps: \n1. Check the device's uplink signal strength and quality using metrics like SINR and UL RSSI.\n2. Verify the eNodeB configuration for NB-IoT support and proper parameter settings.\n3. Analyze the device's protocol logs to identify any errors during the random access procedure.\n4. Inspect the network's radio conditions and potential sources of interference.\n5. Use drive test tools to measure the uplink and downlink signal strength and quality in the area.\n\n3. Remediation: \n1. Optimize the eNodeB's antenna configuration and parameter settings to improve uplink coverage and reduce interference.\n2. Perform a network scan to identify and mitigate any sources of interference in the area.\n3. Consider deploying a small cell or a repeater to enhance the uplink signal strength and quality in the area.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.436007749995042,
+      "rouge_l": 0.12781954887218044,
+      "bertscore_f1": 0.7819132208824158,
+      "expected_tier": "generative",
+      "tier_match": true,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 379,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1436.0
+    },
+    {
+      "query_id": "eval_015",
+      "query_text": "IPv4v6 PDN type request rejected by PGW, UE forced to IPv4 only",
+      "reference": "PDN type IPv4v6 rejection (cause code 52 = single address bearers only, or 50 = PDN type IPv6 only allowed): (1) Check PGW APN configuration \u2014 APN may only have IPv4 pool, no IPv6 prefix delegation. (2) HSS subscription: subscribed PDN type may not include IPv4v6. (3) PGW license or platform limit \u2014 some vendors require specific license for dual-stack PDN. (4) UE behavior: after rejection with cause 52 the UE should retry with IPv4 \u2014 verify the retry is successful. (5) If IPv6 is required: provision IPv6 prefix pool on PGW and update APN profile in HSS.",
+      "prediction": "1. Most likely root cause: The PGW is not configured to support IPv4v6 PDN type or the UE's APN is not provisioned for dual-stack IPv4v6 access.\n2. Diagnostic steps:\n    1. Check the PGW configuration for IPv4v6 PDN type support.\n    2. Verify the UE's APN configuration and provisioning for dual-stack access.\n    3. Analyze the UE's signaling logs to identify the reject cause code.\n    4. Check the eNodeB and SGW logs for any related errors or warnings.\n    5. Validate the UE's capability to support IPv4v6 PDN type.\n3. Remediation:\n    1. Update the PGW configuration to support IPv4v6 PDN type.\n    2. Provision the UE's APN for dual-stack IPv4v6 access.\n    3. Restart the affected network elements or re-establish the UE's connection to re-initiate the PDN request.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.0727897499964456,
+      "rouge_l": 0.1762114537444934,
+      "bertscore_f1": 0.8230302929878235,
+      "expected_tier": "generative",
+      "tier_match": true,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 372,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1072.8
+    },
+    {
+      "query_id": "eval_016",
+      "query_text": "Device receives ATTACH ACCEPT but immediately sends DETACH REQUEST",
+      "reference": "ATTACH ACCEPT followed by immediate UE-initiated DETACH: (1) PDN connectivity failure post-attach \u2014 if default bearer establishment fails the device may detach. Check ESM cause in Activate Default EPS Bearer Context Request vs reject. (2) Device firmware issue \u2014 known bug in some chipsets where APN configuration mismatch triggers detach. (3) SIM application conflict \u2014 SIM STK applet may be overriding network selection. (4) Device detaches if IMS registration is required but fails immediately (IMS-only device). (5) Test with a different device and same SIM, and same device with a test SIM to isolate device vs subscription. Pull NAS trace from MME.",
+      "prediction": "1. Most likely root cause: The device is experiencing a registration failure due to inadequate radio conditions or incorrect network configuration, leading to an immediate detach after a successful attach.\n2. Diagnostic steps: \n1. Check the device's RSRP and SINR values to assess the radio signal strength and quality.\n2. Verify the device's IMSI and IMEI are correctly configured and provisioned in the HSS and HLR.\n3. Analyze the eNodeB and MME logs for any error messages or alarms related to the attach and detach procedures.\n4. Check the device's PDN connectivity and APN settings to ensure they are correctly configured.\n5. Review the network's authentication and authorization policies to ensure the device is properly authenticated.\n3. Remediation: \n1. Optimize the device's radio conditions by adjusting its location or improving the surrounding environment.\n2. Verify and correct the device's configuration and provisioning in the HSS and HLR.\n3. Update the device's software or firmware to ensure compatibility with the network and resolve any known issues.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.5878631250016042,
+      "rouge_l": 0.13868613138686134,
+      "bertscore_f1": 0.7755711078643799,
+      "expected_tier": "generative",
+      "tier_match": true,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 372,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1587.9
+    },
+    {
+      "query_id": "eval_017",
+      "query_text": "SMS over SGd interface not delivering messages for LTE-only subscribers without CSFB",
+      "reference": "SGd-based SMS (SGs-less, direct MME-to-SMSC via SGd) delivery failure: (1) SGd (Diameter) interface between MME and SMS-GMSC must be up \u2014 check Diameter peer state. (2) Subscriber must have SMS-over-SGs or SMS-over-SGd activated in HSS \u2014 check subscription flags. (3) MSISDN routing in SMS-GMSC \u2014 for MT SMS, the SMSC must route via SGd path, not MAP/CAP legacy path. (4) P-CSCF and IMS not required for SGd SMS \u2014 but verify feature flag on MME. (5) For MO SMS: check that UE initiates NAS Uplink NAS Transport with SMS payload and MME routes to SGd. Trace both Diameter SGd and NAS on MME to find the break point.",
+      "prediction": "1. Most likely root cause: The SMS over SGd interface issue is likely due to a misconfiguration or incompatibility with the SMS routing mechanism for LTE-only subscribers without Circuit-Switched FallBack (CSFB) support.\n2. Diagnostic steps: \n    1. Verify the SGd interface configuration and ensure it is correctly set up for SMS routing.\n    2. Check the Mobile Management Entity (MME) and Serving Gateway (SGW) logs for any error messages related to SMS over SGd.\n    3. Confirm that the LTE-only subscribers are correctly provisioned and have the necessary Quality of Service (QoS) parameters for SMS.\n    4. Test SMS delivery using a different interface, such as SMS over SGi, to isolate the issue.\n    5. Verify the SMS Center (SMSC) configuration and its connectivity to the MME.\n3. Remediation: \n    1. Update the SGd interface configuration to ensure compatibility with LTE-only subscribers without CSFB.\n    2. Verify and adjust the SMS routing parameters in the MME and SGW to ensure correct message delivery.\n    3. Validate the SMSC configuration and its connectivity to the MME to ensure proper SMS delivery.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.5061406250024447,
+      "rouge_l": 0.17123287671232879,
+      "bertscore_f1": 0.8062539100646973,
+      "expected_tier": "generative",
+      "tier_match": true,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 413,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1506.1
+    },
+    {
+      "query_id": "eval_018",
+      "query_text": "Voice call audio drops out for first 2 seconds then recovers on every call",
+      "reference": "Systematic 2-second audio gap at call start points to dedicated bearer establishment timing. (1) Measure time between SIP 200 OK and QCI 1 dedicated bearer activation \u2014 if > 1s, bearer setup is the culprit. (2) Jitter buffer pre-fill: some MGWs/UEs buffer before playing \u2014 check jitter buffer configuration. (3) Early media / ringback timing \u2014 is audio gate opening before RTP arrives? (4) RTCP negotiation delay on SBC \u2014 some SBCs wait for RTCP before opening audio. (5) SRTP key exchange \u2014 if DTLS or SDES handshake takes > 1s, media is delayed. Capture RTP at P-CSCF and UE simultaneously and measure first-packet timestamp.",
+      "prediction": "1. Most likely root cause: The issue is likely due to a delay in the establishment of the voice bearer or a problem with the codec negotiation, causing a brief audio clipping at the beginning of each call.\n2. Diagnostic steps: \n    1. Check the call setup success rate and voice quality metrics (e.g., MOS, R-factor) to see if there's a correlation with the audio dropouts.\n    2. Analyze the eNodeB and MME logs for any errors or warnings related to voice bearer setup or codec negotiation.\n    3. Verify the configuration of the voice codecs and codec negotiation parameters on the eNodeB and the core network.\n    4. Use a protocol analyzer to capture and examine the SIP or Diameter signaling messages during call setup.\n    5. Check the radio conditions (RSRP, SINR, etc.) to rule out any radio-related issues.\n3. Remediation: \n    1. Adjust the voice codec configuration and negotiation parameters to optimize the setup process and reduce the likelihood of audio clipping.\n    2. Verify and optimize the eNodeB and core network configuration to ensure proper voice bearer establishment and QoS handling.\n    3. Perform a software update or patching on the affected eNodeB or core network elements if a known issue is identified.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.5636321249985485,
+      "rouge_l": 0.09836065573770493,
+      "bertscore_f1": 0.761183500289917,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 430,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1563.6
+    },
+    {
+      "query_id": "eval_019",
+      "query_text": "MIMO rank-2 throughput significantly worse than rank-1 for stationary UEs",
+      "reference": "Rank-2 performing worse than rank-1 for stationary UEs indicates spatial channel issues: (1) Antenna cross-correlation too high \u2014 if physical antenna separation is insufficient, rank-2 spatial streams interfere. (2) Antenna port calibration mismatch \u2014 check RF calibration on both TX ports. (3) Precoding matrix indicator (PMI) feedback from UE \u2014 stationary UE should report stable PMI. If PMI is unstable, check UE feedback or downlink channel estimation. (4) CSI-RS configuration \u2014 incorrect CSI pilot power prevents accurate channel estimation. (5) UE receiver capability: some devices have poor rank-2 implementation. Test with a reference UE to isolate.",
+      "prediction": "Most likely root cause: The poor MIMO rank-2 throughput compared to rank-1 for stationary UEs is likely due to insufficient receive signal strength or high interference, resulting in a low SINR.\n\nDiagnostic steps:\n1. Check RSRP and RSRQ values for the affected UEs to determine the receive signal strength.\n2. Analyze the SINR values for the UEs to assess the level of interference.\n3. Verify the eNodeB configuration to ensure proper MIMO settings and antenna alignment.\n4. Perform a drive test or use a network scanner to identify any external interference sources.\n5. Review network KPIs, such as PRB utilization and throughput, to identify any patterns or correlations.\n\nRemediation:\n1. Optimize eNodeB antenna alignment and configuration to improve receive signal strength and reduce interference.\n2. Implement interference mitigation techniques, such as CoMP or eICIC, to improve SINR and MIMO performance.\n3. Consider upgrading or reconfiguring the eNodeB to support advanced MIMO features, such as 4x4 or 8x8 MIMO, to improve throughput and capacity.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.2945909589980147,
+      "rouge_l": 0.13688212927756654,
+      "bertscore_f1": 0.7810406684875488,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 394,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1294.6
+    },
+    {
+      "query_id": "eval_020",
+      "query_text": "HSS returning Error-User-Unknown for valid IMSI during TAU procedure",
+      "reference": "HSS Diameter error DIAMETER_ERROR_USER_UNKNOWN (5001) on S6a Update Location Request during TAU: (1) IMSI provisioned in HSS? Check directly in HSS subscriber DB \u2014 provisioning error is common. (2) IMSI format mismatch \u2014 HSS may store with/without leading zeros. (3) If moving between MMEs (inter-MME TAU) \u2014 old MME's IMSI de-registration may not have reached HSS. (4) HSS replication lag in geo-redundant setups \u2014 subscriber created on primary, TAU hit secondary before replication. (5) Subscription state: IMSI may be marked inactive in HSS (e.g. SIM swap in progress). Check HSS audit logs for the specific IMSI with full trace.",
+      "prediction": "1. Most likely root cause: The HSS database may not have a valid subscription record for the given IMSI, or there might be an issue with the HSS configuration or connectivity.\n2. Diagnostic steps: \n    1. Verify the IMSI in the HSS database to ensure it exists and is correctly provisioned.\n    2. Check the HSS logs for any error messages related to the IMSI or the TAU procedure.\n    3. Confirm that the HSS is correctly configured and connected to the MME.\n    4. Use Diameter protocol tracing to analyze the TAU procedure and identify any issues with the HSS response.\n    5. Validate the MME configuration to ensure it is correctly pointing to the HSS.\n3. Remediation: \n    1. Update the HSS database with the correct subscription record for the IMSI if it is missing or incorrect.\n    2. Verify and correct the HSS configuration and connectivity to the MME if necessary.\n    3. Restart the HSS or relevant services if required to apply configuration changes or resolve any transient issues.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.356923209001252,
+      "rouge_l": 0.1412639405204461,
+      "bertscore_f1": 0.7890000343322754,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 389,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1356.9
+    }
+  ]
+}

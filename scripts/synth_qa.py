@@ -57,7 +57,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] ))
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -288,11 +288,11 @@ class RateLimiter:
 @app.command()
 def main(
     input: Path = typer.Option(
-        Path("data/real_kb.jsonl"), "--input", "-i",
+        Path("database/real_kb.jsonl"), "--input", "-i",
         help="Input JSONL (output of scrape_data.py)",
     ),
     out: Path = typer.Option(
-        Path("data/real_cache_candidates.jsonl"), "--out", "-o",
+        Path("database/real_cache_candidates.jsonl"), "--out", "-o",
     ),
     qa_per_chunk: int = typer.Option(3, "--qa-per-chunk", help="Q&A pairs to generate per chunk"),
     max_chunks: int = typer.Option(0, "--max-chunks", help="Cap chunks processed (0 = all)"),

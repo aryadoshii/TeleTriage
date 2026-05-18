@@ -63,7 +63,7 @@ TeleTriage is designed for telecom operations teams that need structured, source
 ### Observability Dashboard
 - **Glassmorphism dark UI** — five views: Overview, Live Query, Eval Results, Query Log, Cache Inspector
 - **Calibration history** — all eval runs in one table, best run highlighted, per-run BERTScore + latency charts
-- **Query logging** — every Live Query run appended to `logs/query_metrics.jsonl`; top promotion candidates surfaced automatically
+- **Query logging** — every Live Query run appended to `outputs/query_metrics.jsonl`; top promotion candidates surfaced automatically
 - **CSV export** — per-query breakdown and cache entries exportable directly from the dashboard
 
 ---
@@ -71,42 +71,42 @@ TeleTriage is designed for telecom operations teams that need structured, source
 ## 📸 Screenshots
 
 ### 🏠 Overview — Architecture & Introduction
-<img src="docs/assets/screenshot_overview_1.png" alt="TeleTriage Overview — problem statement and architecture" width="100%" />
+<img src="frontend/assets/screenshot_overview_1.png" alt="TeleTriage Overview — problem statement and architecture" width="100%" />
 
 ---
 
 ### 📊 Overview — Tech Stack & Stats
-<img src="docs/assets/screenshot_overview_2.png" alt="TeleTriage Overview — tech stack and metrics" width="100%" />
+<img src="frontend/assets/screenshot_overview_2.png" alt="TeleTriage Overview — tech stack and metrics" width="100%" />
 
 ---
 
 ### ⚡ Live Query — Running the Cascade
-<img src="docs/assets/screenshot_live_query.png" alt="TeleTriage Live Query with result metrics" width="100%" />
+<img src="frontend/assets/screenshot_live_query.png" alt="TeleTriage Live Query with result metrics" width="100%" />
 
 ---
 
 ### 🔬 Tier Trace — Full Cascade Detail
-<img src="docs/assets/screenshot_tier_trace.png" alt="TeleTriage tier trace expander showing all three tiers" width="100%" />
+<img src="frontend/assets/screenshot_tier_trace.png" alt="TeleTriage tier trace expander showing all three tiers" width="100%" />
 
 ---
 
 ### 📊 Evaluation Results — Calibration History & Per-Tier Charts
-<img src="docs/assets/screenshot_eval_results.png" alt="TeleTriage Eval Results with calibration history table" width="100%" />
+<img src="frontend/assets/screenshot_eval_results.png" alt="TeleTriage Eval Results with calibration history table" width="100%" />
 
 ---
 
 ### 📋 Per-Query Breakdown
-<img src="docs/assets/screenshot_per_query.png" alt="TeleTriage per-query breakdown table" width="100%" />
+<img src="frontend/assets/screenshot_per_query.png" alt="TeleTriage per-query breakdown table" width="100%" />
 
 ---
 
 ### 🗂️ Query Log — Usage Tracking & Promotion Candidates
-<img src="docs/assets/screenshot_query_log.png" alt="TeleTriage Query Log with tier distribution and promotion candidates" width="100%" />
+<img src="frontend/assets/screenshot_query_log.png" alt="TeleTriage Query Log with tier distribution and promotion candidates" width="100%" />
 
 ---
 
 ### 🔍 Cache Inspector — Browse, Search & Inspect
-<img src="docs/assets/screenshot_cache_inspector.png" alt="TeleTriage Cache Inspector with search and entry detail" width="100%" />
+<img src="frontend/assets/screenshot_cache_inspector.png" alt="TeleTriage Cache Inspector with search and entry detail" width="100%" />
 
 ---
 
@@ -191,7 +191,7 @@ Incoming fault description
 | 7 | Generation primary | Groq — Llama 3.3 70B | ~500 tok/s, free tier, exponential backoff |
 | 8 | Generation backup | Gemini 2.0 Flash | Auto-fallback on Groq rate limit or failure |
 | 9 | Generation offline | `Qwen2.5-1.5B-Instruct` | Local CPU fallback, no API key required |
-| 10 | Cascade router | `teletriage.router.Router` | Orchestrates tiers, accumulates trace, logs every query |
+| 10 | Cascade router | `backend.router.Router` | Orchestrates tiers, accumulates trace, logs every query |
 | 11 | Cache promoter | `CachePromoter` + `rapidfuzz` | 3-gate filter before promotion (confidence, length, Levenshtein dedup) |
 | 12 | Evaluator | `rouge-score` + `bert-score` | Per-tier and end-to-end metrics; subprocess-isolated BERTScore |
 | 13 | Dashboard | Streamlit + Plotly | Glassmorphism dark UI; 5 views; auto-logs every Live Query run |
@@ -292,7 +292,7 @@ uv run teletriage query "eNB not generating handover despite A3 event"
 uv run teletriage query "PDCP SN wrap-around during extended coverage"
 
 # Launch the dashboard
-uv run streamlit run scripts/dashboard.py --server.port 8501
+uv run streamlit run frontend/dashboard.py --server.port 8501
 
 # Run the evaluation harness
 uv run python scripts/run_eval.py
@@ -304,15 +304,11 @@ uv run python scripts/run_eval.py
 
 ```
 TeleTriage/
-├── config/
-│   └── config.yaml                  # Tier thresholds, model names (calibrated)
+├── frontend/
+│   ├── assets/                      # Screenshots and static assets
+│   └── dashboard.py                 # Streamlit observability dashboard
 │
-├── data/
-│   ├── sample_cache.json            # CAG: 25 hand-curated telecom Q&A pairs
-│   ├── sample_kb.jsonl              # RAG KB: 30 seed entries (used in tests)
-│   └── indexes/                     # Built by scripts/build_index.py (gitignored)
-│
-├── src/teletriage/
+├── backend/
 │   ├── config.py                    # Pydantic settings — YAML + .env
 │   ├── types.py                     # Query, TierResult, Response
 │   ├── router.py                    # Cascade orchestrator + query logging
@@ -345,14 +341,21 @@ TeleTriage/
 │   └── observability/
 │       └── logger.py                # structlog setup
 │
+├── config/
+│   └── config.yaml                  # Tier thresholds, model names (calibrated)
+│
+├── database/
+│   ├── sample_cache.json            # CAG: 25 hand-curated telecom Q&A pairs
+│   ├── sample_kb.jsonl              # RAG KB: 30 seed entries (used in tests)
+│   └── indexes/                     # Built by scripts/build_index.py (gitignored)
+│
 ├── scripts/
 │   ├── run_query.py                 # Single query CLI demo
 │   ├── build_index.py               # Build BM25 + FAISS indexes
 │   ├── scrape_data.py               # Scrape 3GPP specs → chunk → dedup
 │   ├── synth_qa.py                  # Groq/Gemini synthetic Q&A generation
 │   ├── promote_cache.py             # Batch cache promotion CLI
-│   ├── run_eval.py                  # Run full evaluation harness
-│   └── dashboard.py                 # Streamlit observability dashboard
+│   └── run_eval.py                  # Run full evaluation harness
 │
 ├── tests/
 │   ├── test_cache_tier.py           # 13 tests
@@ -360,7 +363,7 @@ TeleTriage/
 │   ├── test_generative_tier.py      # 34 tests (32 mocked, 2 @integration)
 │   └── test_cache_promoter.py       # 27 tests
 │
-├── logs/                            # Eval reports + query metrics (gitignored)
+├── outputs/                         # Eval reports + query metrics (gitignored)
 ├── pyproject.toml
 ├── .env.example
 └── ROADMAP.md
@@ -398,7 +401,7 @@ uv run python scripts/scrape_data.py
 uv run python scripts/synth_qa.py
 
 # 3. Build retrieval indexes from the knowledge base
-uv run python scripts/build_index.py --kb data/real_kb.jsonl
+uv run python scripts/build_index.py --kb database/real_kb.jsonl
 
 # 4. (Optional) Promote validated Q&A pairs into the cache
 uv run python scripts/promote_cache.py --dry-run
@@ -439,6 +442,38 @@ All three thresholds were empirically determined on 20 held-out queries, not gue
 
 ---
 
+## 🛠️ Troubleshooting
+
+**Indexes not found when running a query**
+```bash
+uv run python scripts/build_index.py
+```
+
+**Retrieval tier always delegates (near-zero logit scores)**
+
+Indexes may be built against the 30-doc sample KB. Rebuild against the real data:
+```bash
+uv run python scripts/build_index.py --kb database/real_kb.jsonl
+```
+
+**Generative tier fails with authentication error**
+
+Verify `GROQ_API_KEY` in `.env` — get one free at [console.groq.com](https://console.groq.com).
+
+**BERTScore SIGSEGV on macOS Apple Silicon**
+
+Known issue when BGE-small, bge-reranker, and distilbert are all loaded in the same process. Fixed in `backend/evaluation/metrics.py` via subprocess isolation — no action needed.
+
+**Model loading `UNEXPECTED` key warning**
+
+```
+embeddings.position_ids | UNEXPECTED
+```
+
+Harmless warning from `sentence-transformers` when loading BGE models. Does not affect embedding quality or search results.
+
+---
+
 ## 🗺️ Roadmap
 
 - ✅ **Phase 1** — scaffold, CAG tier, cascade router, CLI, 13 tests
@@ -455,38 +490,6 @@ All three thresholds were empirically determined on 20 held-out queries, not gue
 - 🔲 REST API wrapper for integration with ticketing systems (Jira, ServiceNow)
 - 🔲 Model quantisation (INT8) for edge deployment
 - 🔲 Reinforcement learning for adaptive threshold tuning
-
----
-
-## 🛠️ Troubleshooting
-
-**Indexes not found when running a query**
-```bash
-uv run python scripts/build_index.py
-```
-
-**Retrieval tier always delegates (near-zero logit scores)**
-
-Indexes may be built against the 30-doc sample KB. Rebuild against the real data:
-```bash
-uv run python scripts/build_index.py --kb data/real_kb.jsonl
-```
-
-**Generative tier fails with authentication error**
-
-Verify `GROQ_API_KEY` in `.env` — get one free at [console.groq.com](https://console.groq.com).
-
-**BERTScore SIGSEGV on macOS Apple Silicon**
-
-Known issue when BGE-small, bge-reranker, and distilbert are all loaded in the same process. Fixed in `evaluation/metrics.py` via subprocess isolation — no action needed.
-
-**Model loading `UNEXPECTED` key warning**
-
-```
-embeddings.position_ids | UNEXPECTED
-```
-
-Harmless warning from `sentence-transformers` when loading BGE models. Does not affect embedding quality or search results.
 
 ---
 

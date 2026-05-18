@@ -15,7 +15,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from teletriage.evaluation.metrics import (
+from backend.evaluation.metrics import (
     LatencyPercentiles,
     MetricBundle,
     aggregate_metric_bundles,

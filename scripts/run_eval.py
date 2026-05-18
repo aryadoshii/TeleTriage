@@ -21,15 +21,15 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] ))
 
-from teletriage.config import get_config
-from teletriage.evaluation.evaluator import Evaluator
-from teletriage.evaluation.test_set import get_eval_set, get_eval_set_by_expected_tier
-from teletriage.router import Router
-from teletriage.tiers.cache_tier import CacheTier
-from teletriage.tiers.generative_tier import GenerativeTier
-from teletriage.tiers.retrieval_tier import RetrievalTier
+from backend.config import get_config
+from backend.evaluation.evaluator import Evaluator
+from backend.evaluation.test_set import get_eval_set, get_eval_set_by_expected_tier
+from backend.router import Router
+from backend.tiers.cache_tier import CacheTier
+from backend.tiers.generative_tier import GenerativeTier
+from backend.tiers.retrieval_tier import RetrievalTier
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -37,7 +37,7 @@ console = Console()
 
 def _build_router(include_generative: bool, no_retrieval: bool = False) -> Router:
     """Build a router, gracefully skipping tiers whose prerequisites are missing."""
-    from teletriage.config import get_config
+    from backend.config import get_config
     cfg = get_config()
 
     tiers = []

@@ -17,10 +17,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] ))
 
-from teletriage.cache.promoter import CachePromoter
-from teletriage.tiers.cache_tier import CacheTier
+from backend.cache.promoter import CachePromoter
+from backend.tiers.cache_tier import CacheTier
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -29,7 +29,7 @@ console = Console()
 @app.command()
 def main(
     input: Path = typer.Option(
-        Path("data/real_cache_candidates.jsonl"),
+        Path("database/real_cache_candidates.jsonl"),
         "--input", "-i",
         help="JSONL file to promote from (real_cache_candidates.jsonl schema)",
     ),
@@ -40,11 +40,11 @@ def main(
         help="Normalized edit distance threshold; pairs closer than this are rejected",
     ),
     additions_file: Path = typer.Option(
-        Path("data/cache_additions.jsonl"), "--additions-file",
+        Path("database/cache_additions.jsonl"), "--additions-file",
         help="Where promoted pairs are appended",
     ),
     report_file: Path = typer.Option(
-        Path("logs/promotion_report.json"), "--report-file",
+        Path("outputs/promotion_report.json"), "--report-file",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run",

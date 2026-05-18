@@ -8,10 +8,10 @@ app:
 
 # Paths (relative to project root)
 paths:
-  cache_file: data/sample_cache.json
-  knowledge_base: data/sample_kb.jsonl
-  faiss_index_dir: data/indexes/
-  log_dir: logs/
+  cache_file: database/sample_cache.json
+  knowledge_base: database/sample_kb.jsonl
+  faiss_index_dir: database/indexes/
+  log_dir: outputs/
 
 # ─── Tier 1: Cache-Augmented Generation (CAG) ─────────────────────────
 # The fast path. O(1) exact lookup, then fuzzy match as safety net.
@@ -68,4 +68,4 @@ observability:
   # Log every query + which tier answered + latency + confidence
   log_queries: true
   # Dump metrics to disk for later analysis
-  metrics_file: logs/query_metrics.jsonl
+  metrics_file: outputs/query_metrics.jsonl

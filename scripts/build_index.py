@@ -29,12 +29,12 @@ import typer
 from rich.console import Console
 
 # Allow running as a script without installing the package
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] ))
 
-from teletriage.config import get_config
-from teletriage.retrieval.bm25 import BM25Retriever
-from teletriage.retrieval.dense import DenseRetriever
-from teletriage.retrieval.embedder import Embedder
+from backend.config import get_config
+from backend.retrieval.bm25 import BM25Retriever
+from backend.retrieval.dense import DenseRetriever
+from backend.retrieval.embedder import Embedder
 
 app = typer.Typer(add_completion=False)
 console = Console()

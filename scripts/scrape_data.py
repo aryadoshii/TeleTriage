@@ -70,7 +70,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] ))
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -417,11 +417,11 @@ def main(
         help="Comma-separated 3GPP spec IDs (e.g. 36.300,24.301)",
     ),
     out: Path = typer.Option(
-        Path("data/real_kb.jsonl"), "--out", "-o",
+        Path("database/real_kb.jsonl"), "--out", "-o",
         help="Output JSONL path",
     ),
     cache_dir: Path = typer.Option(
-        Path("data/raw_zips"), "--cache-dir",
+        Path("database/raw_zips"), "--cache-dir",
         help="Directory to cache downloaded ZIPs",
     ),
     chunk_tokens: int = typer.Option(512, "--chunk-tokens", help="Target chunk size in tokens"),

@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from teletriage.cache.promoter import CachePromoter, PromotionReport, PromotionResult
+from backend.cache.promoter import CachePromoter, PromotionReport, PromotionResult
 
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────

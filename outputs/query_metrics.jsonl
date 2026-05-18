@@ -1,0 +1,7 @@
+{"ts": "2026-05-17T11:44:17.743642+00:00", "query": "\ud83d\udd0d eNB not generating handover despite A3 event", "answered_by": "generative", "confidence": 0.6, "latency_ms": 1887.9, "tiers_tried": ["cache", "retrieval", "generative"]}
+{"ts": "2026-05-17T11:44:36.873916+00:00", "query": "\ud83d\udd0d eNB not generating handover despite A3 event", "answered_by": "generative", "confidence": 0.6, "latency_ms": 1435.2, "tiers_tried": ["cache", "retrieval", "generative"]}
+{"ts": "2026-05-17T11:44:45.670155+00:00", "query": "eNB not generating handover despite A3 event", "answered_by": "generative", "confidence": 0.6, "latency_ms": 2026.0, "tiers_tried": ["cache", "retrieval", "generative"]}
+{"ts": "2026-05-17T11:44:45.849290+00:00", "query": "eNB not generating handover despite A3 event", "answered_by": "generative", "confidence": 0.6, "latency_ms": 2202.3, "tiers_tried": ["cache", "retrieval", "generative"]}
+{"ts": "2026-05-17T12:27:17.187454+00:00", "query": "eSIM LPA profile download 403 error", "answered_by": "generative", "confidence": 0.6, "latency_ms": 1604.8, "tiers_tried": ["cache", "retrieval", "generative"]}
+{"ts": "2026-05-17T12:38:08.132823+00:00", "query": "high packet loss", "answered_by": "cache", "confidence": 1.0, "latency_ms": 0.1, "tiers_tried": ["cache"]}
+{"ts": "2026-05-18T10:28:36.916352+00:00", "query": "S1-AP reset PDU storm from one eNB", "answered_by": "generative", "confidence": 0.6, "latency_ms": 2090.8, "tiers_tried": ["cache", "retrieval", "generative"]}

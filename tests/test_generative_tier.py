@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from teletriage.generation.llm_client import (
+from backend.generation.llm_client import (
     GENERATIVE_CONFIDENCE,
     AllBackendsFailedError,
     BackendUnavailableError,
@@ -31,7 +31,7 @@ from teletriage.generation.llm_client import (
     GenerationOutput,
     build_user_prompt,
 )
-from teletriage.types import Query, TierName
+from backend.types import Query, TierName
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ class TestBuildUserPrompt:
         assert "Do Y." in result
 
     def test_context_truncated_at_max_chars(self):
-        from teletriage.generation.llm_client import MAX_CONTEXT_CHARS
+        from backend.generation.llm_client import MAX_CONTEXT_CHARS
 
         # Build a single doc whose content exceeds the limit
         big_answer = "A" * (MAX_CONTEXT_CHARS + 500)
@@ -189,7 +189,7 @@ class TestFallbackClient:
         # FallbackClient.backend_names returns type(c).__name__ for each client.
         # MagicMock's type name is always "MagicMock", so we use real (but
         # un-called) client instances via patched constructors.
-        from teletriage.generation.llm_client import GroqClient, LocalQwenClient
+        from backend.generation.llm_client import GroqClient, LocalQwenClient
 
         with patch("groq.Groq"):
             groq_c = GroqClient(api_key="sk-test")
@@ -229,11 +229,11 @@ class TestGroqClientUnit:
 
     def test_raises_on_empty_api_key(self):
         with pytest.raises(BackendUnavailableError, match="api_key is empty"):
-            from teletriage.generation.llm_client import GroqClient
+            from backend.generation.llm_client import GroqClient
             GroqClient(api_key="")
 
     def test_calls_chat_completions_create(self):
-        from teletriage.generation.llm_client import GroqClient
+        from backend.generation.llm_client import GroqClient
 
         mock_completion = self._make_groq_completion("answer text")
 
@@ -255,7 +255,7 @@ class TestGroqClientUnit:
         assert call_kwargs.kwargs["temperature"] == 0.2
 
     def test_output_fields_mapped_correctly(self):
-        from teletriage.generation.llm_client import GroqClient
+        from backend.generation.llm_client import GroqClient
 
         mock_completion = self._make_groq_completion(
             text="the answer", finish_reason="stop", total_tokens=77
@@ -282,7 +282,7 @@ class TestGroqClientUnit:
         pass  # coverage via TestFallbackClient
 
     def test_internal_server_error_retries_then_raises(self):
-        from teletriage.generation.llm_client import GroqClient
+        from backend.generation.llm_client import GroqClient
 
         # Simulate a persistent transient error by raising a plain exception
         # that matches the isinstance check inside GroqClient's except clause.
@@ -307,11 +307,11 @@ class TestGeminiClientUnit:
 
     def test_raises_on_empty_api_key(self):
         with pytest.raises(BackendUnavailableError, match="api_key is empty"):
-            from teletriage.generation.llm_client import GeminiClient
+            from backend.generation.llm_client import GeminiClient
             GeminiClient(api_key="")
 
     def test_calls_generate_content_with_system_instruction(self):
-        from teletriage.generation.llm_client import GeminiClient
+        from backend.generation.llm_client import GeminiClient
 
         mock_usage = MagicMock()
         mock_usage.total_token_count = 33
@@ -348,7 +348,7 @@ class TestGeminiClientUnit:
         assert config.temperature == 0.2
 
     def test_output_fields_mapped_correctly(self):
-        from teletriage.generation.llm_client import GeminiClient
+        from backend.generation.llm_client import GeminiClient
 
         mock_usage = MagicMock()
         mock_usage.total_token_count = 55
@@ -391,8 +391,8 @@ class TestGenerativeTier:
         Return a GenerativeTier whose internal FallbackClient is replaced
         by a MagicMock so no real API calls are issued.
         """
-        from teletriage.generation.llm_client import GenerationOutput
-        from teletriage.tiers.generative_tier import GenerativeTier
+        from backend.generation.llm_client import GenerationOutput
+        from backend.tiers.generative_tier import GenerativeTier
 
         mock_client = MagicMock(spec=FallbackClient)
         mock_client.generate.return_value = GenerationOutput(
@@ -479,7 +479,7 @@ class TestGenerativeTier:
         assert result.details["status"] == "all_backends_failed"
 
     def test_system_prompt_is_passed_to_client(self, tier_with_mock_client):
-        from teletriage.tiers.generative_tier import SYSTEM_PROMPT
+        from backend.tiers.generative_tier import SYSTEM_PROMPT
 
         tier, mock_client = tier_with_mock_client
         tier.answer(Query(text="LTE fault"))
@@ -513,7 +513,7 @@ class TestGroqIntegration:
         api_key = os.environ.get("GROQ_API_KEY", "")
         if not api_key:
             # Also check .env file via the config system
-            from teletriage.config import get_config
+            from backend.config import get_config
             api_key = get_config().secrets.groq_api_key
 
         if not api_key:
@@ -522,7 +522,7 @@ class TestGroqIntegration:
                 "Set it in .env or environment to run integration tests."
             )
 
-        from teletriage.generation.llm_client import GroqClient
+        from backend.generation.llm_client import GroqClient
         return GroqClient(api_key=api_key, model="llama-3.3-70b-versatile")
 
     def test_real_groq_call_returns_non_empty_answer(self, groq_client):

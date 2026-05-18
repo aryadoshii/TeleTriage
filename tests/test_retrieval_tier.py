@@ -33,10 +33,10 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from teletriage.retrieval._types import Hit
-from teletriage.retrieval.bm25 import BM25Retriever, _tokenize
-from teletriage.retrieval.hybrid import reciprocal_rank_fusion
-from teletriage.retrieval.reranker import _sigmoid
+from backend.retrieval._types import Hit
+from backend.retrieval.bm25 import BM25Retriever, _tokenize
+from backend.retrieval.hybrid import reciprocal_rank_fusion
+from backend.retrieval.reranker import _sigmoid
 
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -306,7 +306,7 @@ class TestEmbedder:
 
     @pytest.fixture(scope="class")
     def embedder(self):
-        from teletriage.retrieval.embedder import Embedder
+        from backend.retrieval.embedder import Embedder
         return Embedder("BAAI/bge-small-en-v1.5")
 
     def test_dim_is_set(self, embedder):
@@ -352,8 +352,8 @@ class TestDenseRetriever:
 
     @pytest.fixture(scope="class")
     def dense(self):
-        from teletriage.retrieval.dense import DenseRetriever
-        from teletriage.retrieval.embedder import Embedder
+        from backend.retrieval.dense import DenseRetriever
+        from backend.retrieval.embedder import Embedder
         embedder = Embedder("BAAI/bge-small-en-v1.5")
         return DenseRetriever.build(SAMPLE_DOCS, embedder)
 
@@ -380,8 +380,8 @@ class TestDenseRetriever:
             assert -1.0 <= h.score <= 1.0 + 1e-5
 
     def test_save_and_load_roundtrip(self, dense, tmp_path: Path):
-        from teletriage.retrieval.dense import DenseRetriever
-        from teletriage.retrieval.embedder import Embedder
+        from backend.retrieval.dense import DenseRetriever
+        from backend.retrieval.embedder import Embedder
         dense.save(tmp_path)
         embedder = Embedder("BAAI/bge-small-en-v1.5")
         loaded = DenseRetriever.load(tmp_path, embedder)
@@ -400,7 +400,7 @@ class TestReranker:
 
     @pytest.fixture(scope="class")
     def reranker(self):
-        from teletriage.retrieval.reranker import CrossEncoderReranker
+        from backend.retrieval.reranker import CrossEncoderReranker
         return CrossEncoderReranker("BAAI/bge-reranker-base")
 
     def test_rerank_returns_same_count(self, reranker):
@@ -466,8 +466,8 @@ class TestRetrievalTier:
 
     @pytest.fixture(scope="class")
     def tier(self):
-        from teletriage.config import get_config
-        from teletriage.tiers.retrieval_tier import RetrievalTier
+        from backend.config import get_config
+        from backend.tiers.retrieval_tier import RetrievalTier
 
         cfg = get_config()
         index_dir = cfg.resolve_path(cfg.paths.faiss_index_dir)
@@ -483,20 +483,20 @@ class TestRetrievalTier:
         return RetrievalTier()
 
     def test_known_query_returns_correct_doc(self, tier):
-        from teletriage.types import Query
+        from backend.types import Query
 
         result = tier.answer(Query(text="intermittent packet loss on LTE"))
         assert result.answered, "Expected a hit for a query directly in the KB"
         assert "kb001" in result.details.get("doc_id", "")
 
     def test_result_has_valid_confidence(self, tier):
-        from teletriage.types import Query
+        from backend.types import Query
 
         result = tier.answer(Query(text="RSRQ degradation urban interference"))
         assert 0.0 <= result.confidence <= 1.0
 
     def test_latency_under_budget(self, tier):
-        from teletriage.types import Query
+        from backend.types import Query
 
         result = tier.answer(Query(text="BGP flapping on core router"))
         # Phase 2 budget from ROADMAP: < 300 ms on CPU for top-1 retrieval.
@@ -506,7 +506,7 @@ class TestRetrievalTier:
         )
 
     def test_details_populated(self, tier):
-        from teletriage.types import Query
+        from backend.types import Query
 
         result = tier.answer(Query(text="VoLTE one-way audio"))
         if result.answered:
@@ -514,7 +514,7 @@ class TestRetrievalTier:
             assert "rerank_logit" in result.details
 
     def test_unrelated_query_delegates(self, tier):
-        from teletriage.types import Query
+        from backend.types import Query
 
         # A query completely unrelated to telecom should either delegate or
         # return a low-confidence result.
@@ -524,7 +524,7 @@ class TestRetrievalTier:
             assert result.confidence <= tier.min_confidence or True  # softened: just verify no crash
 
     def test_should_delegate_contract(self, tier):
-        from teletriage.types import Query, TierResult, TierName
+        from backend.types import Query, TierResult, TierName
 
         low_conf = TierResult(tier=TierName.RETRIEVAL, answer="x", confidence=0.30)
         assert tier.should_delegate(low_conf) is True

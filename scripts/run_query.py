@@ -14,16 +14,16 @@ import sys
 from pathlib import Path
 
 # Ensure src/ is importable when running as a script (before uv install)
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] ))
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from teletriage.observability import setup_logging
-from teletriage.router import Router
-from teletriage.types import Query
+from backend.observability import setup_logging
+from backend.router import Router
+from backend.types import Query
 
 app = typer.Typer(help="TeleTriage CLI", add_completion=False)
 console = Console()

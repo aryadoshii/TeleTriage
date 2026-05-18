@@ -1,0 +1,497 @@
+{
+  "timestamp": "2026-05-04T10:21:05.885099+00:00",
+  "system_version": "0.2.0",
+  "n_queries": 20,
+  "overall": {
+    "rouge_l_mean": 0.1201,
+    "rouge_l_median": 0.1111,
+    "bertscore_f1_mean": 0.767,
+    "bertscore_f1_median": 0.7584,
+    "p50_sec": 0.6997,
+    "p95_sec": 2.126,
+    "p99_sec": 2.2059,
+    "mean_sec": 1.2053,
+    "min_sec": 0.5816,
+    "max_sec": 2.2259
+  },
+  "tier_distribution": {
+    "cache": {
+      "count": 0,
+      "pct": 0.0
+    },
+    "retrieval": {
+      "count": 12,
+      "pct": 60.0
+    },
+    "generative": {
+      "count": 8,
+      "pct": 40.0
+    },
+    "none": {
+      "count": 0,
+      "pct": 0.0
+    }
+  },
+  "per_tier": {
+    "retrieval": {
+      "rouge_l_mean": 0.0977,
+      "rouge_l_median": 0.0971,
+      "bertscore_f1_mean": 0.7547,
+      "bertscore_f1_median": 0.7527,
+      "p50_sec": 0.6495,
+      "p95_sec": 1.0931,
+      "p99_sec": 1.4713,
+      "mean_sec": 0.7188,
+      "min_sec": 0.5816,
+      "max_sec": 1.5658,
+      "n": 12
+    },
+    "generative": {
+      "rouge_l_mean": 0.1538,
+      "rouge_l_median": 0.1595,
+      "bertscore_f1_mean": 0.7854,
+      "bertscore_f1_median": 0.7933,
+      "p50_sec": 1.9244,
+      "p95_sec": 2.1891,
+      "p99_sec": 2.2185,
+      "mean_sec": 1.935,
+      "min_sec": 1.6123,
+      "max_sec": 2.2259,
+      "n": 8
+    }
+  },
+  "per_query": [
+    {
+      "query_id": "eval_001",
+      "query_text": "UE keeps reselecting to 3G even when LTE coverage is adequate",
+      "reference": "Idle-mode reselection to 3G when LTE is available is driven by cell selection/reselection parameters. Check: (1) SIB3/SIB5 \u2014 thresh-X-high and thresh-X-low for inter-RAT reselection. (2) RSRP of serving LTE cell \u2014 if below s-IntraSearchP the UE starts measuring neighbours. (3) IRAT priority configuration \u2014 if 3G cells have higher absolute priority they will be selected. (4) UE capability \u2014 is VoLTE supported? If not, UE may be configured to prefer UTRAN for CS domain. Review idle-mode measurement parameters in RRC SIB broadcast.",
+      "prediction": "The UE stays in the current serving cell and applies the normal cell reselection process. The service request procedure is started, if still necessary, when timer T3447 expires.\n\n5.6.1.7Abnormal cases on the network side\n\nThe following abnormal cases can be identified:\n\na)Lower layer failure",
+      "answered_by": "retrieval",
+      "confidence": 0.5500820375173197,
+      "latency_sec": 1.5658099580005,
+      "rouge_l": 0.10294117647058823,
+      "bertscore_f1": 0.7560102343559265,
+      "expected_tier": "retrieval",
+      "tier_match": true,
+      "details": {
+        "doc_id": "real_04153",
+        "rerank_logit": 0.20100216567516327,
+        "rerank_confidence": 0.5500820375173197,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 1565.8
+    },
+    {
+      "query_id": "eval_002",
+      "query_text": "Secondary cell addition for carrier aggregation fails silently",
+      "reference": "When SCell addition fails without explicit failure: (1) Check RRCConnectionReconfiguration \u2014 is SCell configuration present and UE-NR/UE-EUTRA-Capability confirming CA band combination support? (2) Verify SCell is in the active neighbour relation list of PCell. (3) SCell RSRP threshold for addition (A4/A6 event configuration). (4) X2 interface between cells \u2014 SCell addition uses X2 for load information. (5) SCell scheduler load \u2014 may reject addition if PRB utilization is too high. Check eNB counters for CA addition attempts vs successes.",
+      "prediction": "1. Most likely root cause: The secondary cell addition for carrier aggregation is failing due to insufficient signal strength or quality, likely related to poor RSRP or SINR levels on the secondary cell.\n2. Diagnostic steps: \n    1. Check the RSRP and SINR values of the secondary cell to ensure they meet the minimum requirements for carrier aggregation.\n    2. Verify the secondary cell's configuration, including its PCI, frequency, and transmission mode.\n    3. Analyze the eNodeB logs for any error messages related to secondary cell addition.\n    4. Use drive test tools to measure the RF conditions and interference levels in the area.\n    5. Check the UE's capability and configuration to support carrier aggregation with the specific secondary cell.\n3. Remediation: \n    1. Adjust the secondary cell's configuration, such as its transmit power or antenna settings, to improve its signal strength and quality.\n    2. Optimize the carrier aggregation configuration, including the secondary cell's priority and weighting, to ensure proper addition and utilization.\n    3. Perform an eNodeB software update or patch to resolve any known issues related to carrier aggregation and secondary cell addition.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 2.2259107500003665,
+      "rouge_l": 0.1287878787878788,
+      "bertscore_f1": 0.754815936088562,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 398,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 2225.9
+    },
+    {
+      "query_id": "eval_003",
+      "query_text": "PDCP SDU discard rate spiking on uplink for one cell sector",
+      "reference": "High PDCP discard indicates packets are being dropped before transmission due to buffer overflow or discard timer expiry. Steps: (1) Check uplink SINR \u2014 poor radio quality causes HARQ retransmissions that back up the PDCP buffer. (2) UE transmit power headroom (PHR) \u2014 if UE is power-limited it cannot retransmit. (3) Uplink scheduler \u2014 is UE getting sufficient resource grants? (4) PDCP discard timer configuration \u2014 may be too aggressive. (5) Check for uplink interference source (PIM, external). Correlate with HARQ BLER and PHR statistics in the RRM counters.",
+      "prediction": "-forward to the target eNB the uplink PDCP SDUs received out of sequence if the source eNB has accepted the request from the target eNB for uplink forwarding for the bearer during the Handover Preparation procedure.\n\nThe PDCP SN of forwarded SDUs is carried in the \"PDCP PDU number\" field of the GTP-U extension header. The target eNB shall use the PDCP SN if it is available in the forwarded GTP-U packet.\n\nFor normal HO in-sequence delivery of upper layer PDUs during handover is based on a continuous PDCP SN and is provided by the \"in-order delivery and duplicate elimination\" function at the PDCP layer:\n\n-in the downlink, the \"in-order delivery and duplicate elimination\" function at the UE PDCP layer guarantees in-sequence delivery of downlink PDCP SDUs;\n\n-in the uplink, the \"in-order delivery and duplicate elimination\" function at the target eNB PDCP layer guarantees in-sequence delivery of uplink PDCP SDUs.\n\nAfter a normal handover, when the UE receives a PDCP SDU from the target eNB, it can deliver it to higher layer together with all PDCP SDUs with lower SNs regardless of possible gaps.\n\nFor handovers involving Full Configuration, the source eNB behaviour is unchanged from the description above. The target eNB may not send PDCP SDUs for which delivery was attempted by the source eNB. The target eNB identifies these by the presence of the PDCP SN in the forwarded GTP-U packet and discards them.\n\nAfter a Full Configuration handover, the UE delivers received PDCP SDU from the source cell to the higher layer regardless of possible gaps. UE discards uplink PDCP SDUs for which transmission was attempted and retransmission of these over the target cell is not possible.\n\n10.1.2.3.2For RLC-UM DRBs",
+      "answered_by": "retrieval",
+      "confidence": 0.688200254203055,
+      "latency_sec": 0.6876312079994022,
+      "rouge_l": 0.0783289817232376,
+      "bertscore_f1": 0.737092912197113,
+      "expected_tier": "retrieval",
+      "tier_match": true,
+      "details": {
+        "doc_id": "real_00181",
+        "rerank_logit": 0.7917187213897705,
+        "rerank_confidence": 0.688200254203055,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 687.6
+    },
+    {
+      "query_id": "eval_004",
+      "query_text": "Dedicated bearer for streaming video keeps being deactivated mid-session",
+      "reference": "Non-GBR dedicated bearer teardown mid-session: (1) Check PCRF policy \u2014 is a Gx CCA-Update removing the bearer? TDF detection may be reclassifying traffic. (2) Inactivity timer on PGW for dedicated bearers \u2014 may be misconfigured. (3) SGW/PGW resource limits \u2014 bearer table exhaustion causes eviction. (4) UE-initiated bearer modification (QoS downgrade request). (5) Check ESM cause in Deactivate EPS Bearer Context Request. Trace the Gx interface for PCC rule changes correlated with bearer deactivation timestamps.",
+      "prediction": "1. Most likely root cause: The dedicated bearer for streaming video is being deactivated mid-session due to poor radio conditions, such as low RSRP or high interference, causing the eNodeB to release the bearer.\n2. Diagnostic steps: \n    1. Check the RSRP and SINR values for the affected user equipment (UE) to determine the radio conditions.\n    2. Verify the bearer QoS parameters, such as the guaranteed bitrate and packet delay budget.\n    3. Analyze the eNodeB logs for any bearer release messages or error codes.\n    4. Monitor the PDN gateway for any issues with the bearer establishment or modification procedures.\n    5. Perform a network trace to capture the bearer activation and deactivation messages.\n3. Remediation: \n    1. Optimize the radio network by adjusting the antenna tilt, azimuth, or adding new cell sites to improve the RSRP and SINR values.\n    2. Modify the bearer QoS parameters to relax the guaranteed bitrate or packet delay budget, allowing the bearer to remain active during periods of poor radio conditions.\n    3. Implement a more robust bearer management strategy, such as using a higher-priority bearer or enabling bearer re-establishment procedures.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.955207750000227,
+      "rouge_l": 0.1450381679389313,
+      "bertscore_f1": 0.7846391201019287,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 413,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1955.2
+    },
+    {
+      "query_id": "eval_005",
+      "query_text": "GTPv2-C signaling delay between MME and SGW causing session setup lag",
+      "reference": "GTPv2-C (S11) delay causes PDN setup latency. Investigate: (1) Round-trip time on S11 path \u2014 run pings between MME and SGW loopback addresses. (2) SGW processing delay \u2014 check SGW CPU and message queue depth during busy hour. (3) Retransmissions on GTPv2-C \u2014 if Create Session Request is retransmitted, S11 RTT exceeds the T3-RESPONSE timer (default 3s). (4) IP routing asymmetry on the S11 VLAN. (5) SGW pool load balancing \u2014 one SGW may be overloaded. Use wireshark/tshark with GTP dissector to measure per-message RTT on the S11 interface.",
+      "prediction": "18.When the timer started in step\u00a015 expires, the source MME deletes the EPS bearer resources by sending Delete Session Request (Cause, Operation Indication, Secondary RAT usage data) messages to the Serving GW because the new SGSN is a Gn/Gp SGSN, which is derived from using GTPv1 for relocation signalling between new Gn/Gp SGSN and old MME. The new Gn/Gp SGSN does not signal any Serving GW change. The operation Indication flag is not set, that indicates to the Serving GW that the Serving GW shall not initiate a delete procedure towards the PDN GW. Secondary RAT usage data was included if it was received in step\u00a011a. The Source Serving GW acknowledges with Delete Session Response (Cause) messages. If ISR is activated the cause indicates to the old SGW that the old SGW shall delete the bearer resources on the other old CN node by sending Delete Bearer Request message(s) to that CN node. If resources for indirect forwarding have been allocated then these are released.",
+      "answered_by": "retrieval",
+      "confidence": 0.6429745105001118,
+      "latency_sec": 0.7062759159998677,
+      "rouge_l": 0.09125475285171103,
+      "bertscore_f1": 0.7553818821907043,
+      "expected_tier": "retrieval",
+      "tier_match": true,
+      "details": {
+        "doc_id": "real_06857",
+        "rerank_logit": 0.5882979035377502,
+        "rerank_confidence": 0.6429745105001118,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 706.3
+    },
+    {
+      "query_id": "eval_006",
+      "query_text": "SRVCC handover from VoLTE to WCDMA failing during active call",
+      "reference": "SRVCC (Single Radio Voice Call Continuity) failure: (1) Verify SVP (Sv) interface between MME and MSC-Server is up. (2) Check PS-to-CS handover trigger \u2014 B2 measurement event must fire with WCDMA threshold configured. (3) WCDMA cell must be in UE's active neighbour set (verify UTRAN frequency list in SIB6). (4) STN-SR (Session Transfer Number for SR-VCC) must be provisioned in HSS. (5) IMS ATU-STI (Access Transfer Update) must complete before WCDMA bearer is established. Check MME SRVCC counters \u2014 failure cause codes (e.g. target cell unavailable, Sv timeout) will narrow the root cause.",
+      "prediction": "6 - Prioritised bit rate Yes No\n7 - RLC UM - can only be set to 0 if the UE does neither support VoLTE nor MCPTT Yes, if UE supports VoLTE, MCPTT, or both.Yes, if UE supports SRVCC to EUTRAN from GERAN. No\n8 - EUTRA RRC_CONNECTED to UTRA FDD or UTRA TDD CELL_DCH PS handover, if the UE supports either only UTRAN FDD or only UTRAN TDD- EUTRA RRC_CONNECTED to UTRA FDD CELL_DCH PS handover, if the UE supports both UTRAN FDD and UTRAN TDD - can only be set to 1 if the UE has set bit number 22 to 1 Yes (except for category M1 and M2 UEs) for FDD, if UE supports UTRA FDD. Yes\n9 - EUTRA RRC_CONNECTED to GERAN GSM_Dedicated handover - related to SR-VCC- can only be set to 1 if the UE has set bit number 23 to 1 Yes (except for category M1 and M2 UEs), if UE supports SRVCC to EUTRAN from GERAN. Yes\n10 - EUTRA RRC_CONNECTED to GERAN (Packet_) Idle by Cell Change Order- EUTRA RRC_CONNECTED to GERAN (Packet_) Idle by Cell Change Order with NACC (Network Assisted Cell Change) Yes\n11 - EUTRA RRC_CONNECTED to CDMA2000 1xRTT CS Active handover - related to SR-VCC- can only be set to 1 if the UE has sets bit number 24 to 1 Yes\n12 - EUTRA RRC_CONNECTED to CDMA2000 HRPD Active handover - can only be set to 1 if the UE has set bit number 26 to 1 Yes\n13 - Inter-frequency handover (within FDD or TDD) - can only be set to 1 if the UE has set bit number 25 to 1 Yes (except for category M1 and M2 UEs), unless UE only supports band 13 No\n14 - Measurement reporting event: Event A4 \u2013 Neighbour > threshold- Measurement reporting event: Event A5 \u2013 Serving < threshold1 & Neighbour > threshold2 Yes (except for category M1 and M2 UEs) No",
+      "answered_by": "retrieval",
+      "confidence": 0.7000158184641797,
+      "latency_sec": 0.6056874999994761,
+      "rouge_l": 0.07194244604316546,
+      "bertscore_f1": 0.7442663908004761,
+      "expected_tier": "retrieval",
+      "tier_match": true,
+      "details": {
+        "doc_id": "real_02615",
+        "rerank_logit": 0.8473731875419617,
+        "rerank_confidence": 0.7000158184641797,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 605.7
+    },
+    {
+      "query_id": "eval_007",
+      "query_text": "Gx interface timeout causing all new bearer requests to be rejected",
+      "reference": "Gx (PCRF interface) timeout blocks all dynamic PCC rule delivery. Steps: (1) Check Diameter routing \u2014 is the CCR-I reaching the PCRF? Verify Diameter realm routing on the DRA. (2) PCRF health \u2014 CPU, memory, SPR backend response time. (3) CCR timeout value on PGW \u2014 if shorter than PCRF processing time, spurious timeouts occur. (4) Check if PGW is configured with a default-rule fallback for Gx timeout (local policy). If not, all sessions requiring dynamic policy will fail. (5) Capture Diameter traffic on Gx \u2014 look for CCA response codes (5012 = Unable to Deliver). Immediate mitigation: enable local PCC fallback on PGW.",
+      "prediction": "1. Most likely root cause: The Gx interface timeout is likely due to a communication issue between the Policy and Charging Rules Function (PCRF) and the Policy and Charging Enforcement Function (PCEF), causing the PCRF to not respond in time.\n2. Diagnostic steps: \n1. Check the Gx interface configuration and logs for any errors or misconfigurations.\n2. Verify the connectivity between the PCRF and PCEF using tools like ping or traceroute.\n3. Analyze the PCRF logs to identify any issues with the bearer request processing.\n4. Check the PCEF logs for any Gx interface-related errors or warnings.\n5. Use a protocol analyzer to capture and inspect the Gx interface traffic.\n3. Remediation: \n1. Restart the PCRF or PCEF to reset the Gx interface and clear any pending requests.\n2. Adjust the Gx interface timeout value to a higher setting to allow more time for the PCRF to respond.\n3. Verify and correct any configuration issues or errors found during the diagnostic steps.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.788121582999338,
+      "rouge_l": 0.18181818181818182,
+      "bertscore_f1": 0.7935956716537476,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 370,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1788.1
+    },
+    {
+      "query_id": "eval_008",
+      "query_text": "NAS reject EMM cause 11 affecting subset of inbound roaming subscribers",
+      "reference": "EMM cause 11 (PLMN not allowed) from MME during roaming: (1) Check VPLMN's allowed-PLMN list in MME \u2014 HPLMN PLMN ID may be missing. (2) OCS/PCRF roaming profile \u2014 subscription may not allow this service type for the HPLMN. (3) HSS ULA (Update Location Answer) flags \u2014 check 'PLMN-ODB' bit (Operator Determined Barring). (4) Roaming agreement active and reflected in systems? (5) Does it affect all IMSI ranges from that HPLMN or a subset (may indicate partial profile migration). Correlate MME EMM reject cause codes with specific HPLMN MCC-MNC pairs.",
+      "prediction": "If the attach request for emergency bearer services cannot be accepted by the network, the MME shall send an ATTACH REJECT message to the UE including EMM cause #5 \"IMEI not accepted\" or one of the EMM cause values as described in clause\u00a05.5.1.2.5.\n\nNOTE\u00a01:If EMM cause #11 is sent to a UE of a roaming subscriber attaching for emergency bearer services and the UE is in automatic network selection mode, it cannot obtain normal service provided by this PLMN.\n\nUpon receiving the ATTACH REJECT message including EMM cause #5, the UE shall enter the state EMM-DEREGISTERED.NO-IMSI.\n\nUpon receiving the ATTACH REJECT message including one of the other EMM cause values, the UE shall perform the actions as described in clause\u00a05.5.1.2.5 with the following addition: the UE shall inform the upper layers of the failure of the procedure.\n\nNOTE\u00a02:This can result in the upper layers requesting establishment of a CS emergency call (if not already attempted in the CS domain), or other implementation specific mechanisms, e.g. procedures specified in 3GPP\u00a0TS\u00a024.229\u00a0[13D] can result in the emergency call being attempted to another IP-CAN.\n\nIf the attach request for emergency bearer services fails due to abnormal case a) in clause\u00a05.5.1.2.6, the UE shall perform the actions as described in clause\u00a05.5.1.2.6 and inform the upper layers of the failure to access the network.",
+      "answered_by": "retrieval",
+      "confidence": 0.6570780965091145,
+      "latency_sec": 0.6930705840004521,
+      "rouge_l": 0.08746355685131196,
+      "bertscore_f1": 0.7468885779380798,
+      "expected_tier": "retrieval",
+      "tier_match": true,
+      "details": {
+        "doc_id": "real_03575",
+        "rerank_logit": 0.650300145149231,
+        "rerank_confidence": 0.6570780965091145,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 693.1
+    },
+    {
+      "query_id": "eval_009",
+      "query_text": "eNB not generating handover decision despite UE sending A3 measurement reports",
+      "reference": "When A3 events are received but no handover is initiated: (1) Verify A3 offset and hysteresis \u2014 if configured too aggressively the UE may trigger A3 but the source eNB disagrees. (2) Check neighbour relation \u2014 target cell must be in ANR table with valid PCI and EARFCN. (3) Target cell load rejection \u2014 X2 HO Request may be rejected by target due to high PRB utilization. (4) X2 interface health between source and target eNB \u2014 HO request may never reach the target. (5) Time-to-trigger (TTT) \u2014 is A3 event sustained for the full TTT before handover is attempted? Enable RRC trace on the source eNB to verify HO decision logic.",
+      "prediction": "3)If a measurement configuration is not present for the concerned frequency/RAT the source eNB configures the UE with relevant measurement configuration including measurement gaps as needed, so that the UE can perform measurements on the reported RAT and frequency. The network may also use the proximity indication to minimize the requesting of handover preparation information of CSG/hybrid cells by avoiding requesting such information when the UE is not in the geographical area where its CSG member cells are located.\n\n4)The UE sends a measurement report including the PCI (e.g., due to triggered event A3).\n\n5)The source eNB configures the UE to perform SI acquisition and reporting of a particular PCI.\n\n6)The UE performs SI acquisition using autonomous gaps, i.e., the UE may suspend reception and transmission with the source eNB within the limits defined in TS 36.133 [21] to acquire the relevant system information from the target HeNB.\n\n7)The UE sends a measurement report including (E-)CGI, TAI, CSG ID and \"member/non-member\" indication. If the target cell is a shared CSG/hybrid cell, the measurement report also includes the subset of the broadcast PLMN identities that pass PLMN ID check and for which the Permitted CSG list of the UE includes an entry comprising the cell's CSG ID and the respective PLMN identity.\n\n8)The source eNB includes the target E-CGI and the CSG ID in the Handover Required message sent to the MME. If the target is a hybrid cell the Cell Access Mode of the target is included.",
+      "answered_by": "retrieval",
+      "confidence": 0.7156026507334661,
+      "latency_sec": 0.6126149589999841,
+      "rouge_l": 0.128686327077748,
+      "bertscore_f1": 0.7835386991500854,
+      "expected_tier": "retrieval",
+      "tier_match": true,
+      "details": {
+        "doc_id": "real_00254",
+        "rerank_logit": 0.9227526783943176,
+        "rerank_confidence": 0.7156026507334661,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 612.6
+    },
+    {
+      "query_id": "eval_010",
+      "query_text": "TCP sessions over SGi dropped after exactly 5 minutes of inactivity",
+      "reference": "Exact 5-minute TCP idle teardown is a firewall or NAT timeout. (1) Check CGNAT / stateful firewall TCP idle timeout on SGi \u2014 default is often 300s (5 min). Extend or set application-specific timeout. (2) PGW session idle timer \u2014 not typical for TCP but confirm SGW/PGW inactive session timeout. (3) Load balancer session persistence timer. (4) Application keepalive \u2014 if TCP keepalive is not configured, the 5-minute idle hits. Fix: increase firewall TCP idle timer or enable SO_KEEPALIVE on the application. Capture RST origin (client vs server vs CGNAT) with tshark on SGi to confirm.",
+      "prediction": "1. Most likely root cause: The TCP sessions are being terminated due to an idle timeout configuration, possibly related to the PDN gateway or SGi interface.\n2. Diagnostic steps: \n    1. Check the PDN gateway configuration for idle timeout settings.\n    2. Verify the SGi interface configuration for any timeout parameters.\n    3. Analyze network logs to confirm the termination of TCP sessions after 5 minutes of inactivity.\n    4. Investigate the eNodeB and SGW configurations for any session inactivity timers.\n    5. Review the TCP session establishment and termination patterns to identify any correlations.\n3. Remediation: \n    1. Adjust the idle timeout configuration on the PDN gateway or SGi interface to a higher value to prevent premature session termination.\n    2. Implement a keep-alive mechanism for TCP sessions to maintain activity and prevent timeouts.\n    3. Update the network configuration to align with the required session inactivity timer settings.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.6122672499996042,
+      "rouge_l": 0.18333333333333335,
+      "bertscore_f1": 0.7930008769035339,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 361,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1612.3
+    },
+    {
+      "query_id": "eval_011",
+      "query_text": "Uplink noise floor elevated on 3 contiguous PRBs suggesting narrowband interference",
+      "reference": "Narrowband interference on specific PRBs is typically external RF or PIM. Steps: (1) Use spectrum analyzer or eNB uplink interference counters to confirm the affected frequency range. (2) PIM check: contiguous PRB pattern near downlink carriers is PIM signature \u2014 run PIM sweep on jumpers, connectors, and antennas. (3) External narrowband interferer (e.g. LTE-M device, IoT gateway) \u2014 use direction-finding / spectrum scan. (4) Check if interference is time-correlated (burst vs constant) to identify source type. (5) Inter-cell interference \u2014 verify ICIC is configured, check if neighbouring cell uses same PRBs at full power.",
+      "prediction": "1. Most likely root cause: The elevated uplink noise floor on 3 contiguous Physical Resource Blocks (PRBs) is likely due to external narrowband interference from an unknown source.\n2. Diagnostic steps: \n    1. Analyze the interference pattern to determine if it's constant or intermittent.\n    2. Check the eNodeB's performance metrics, such as RSRP and SINR, to assess the impact on network performance.\n    3. Use spectrum analysis tools to identify the source and characteristics of the interference.\n    4. Inspect nearby cell sites and external environments for potential sources of interference.\n    5. Review recent changes or additions in the surrounding area that could be causing the interference.\n3. Remediation: \n    1. Identify and mitigate the source of interference, if possible, by working with external entities or adjusting network parameters.\n    2. Consider implementing interference mitigation techniques, such as adaptive interference cancellation or interference rejection combining.\n    3. Adjust the uplink power control parameters to minimize the impact of interference on network performance.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.8936125840000386,
+      "rouge_l": 0.17391304347826084,
+      "bertscore_f1": 0.798211932182312,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 380,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1893.6
+    },
+    {
+      "query_id": "eval_012",
+      "query_text": "S1-AP reset PDU storm from one eNB causing MME instability",
+      "reference": "Repeated S1-AP RESET from one eNB destabilizes MME UE context. (1) Identify cause IE in RESET \u2014 does eNB report an internal failure, radio link failure, or transport? (2) Check eNB hardware alarms \u2014 baseband restarts cause SCTP association reset. (3) Transport flap: SCTP heartbeat failures trigger RESET. Check interface counters on both sides. (4) Software issue on eNB \u2014 scheduled restart? Check OMC for maintenance windows. (5) MME-side mitigation: implement RESET rate limiting per eNB. Isolate the problematic eNB from the pool temporarily to protect the MME from context churn. Pull SCTP statistics and eNB alarm history from OMC.",
+      "prediction": "-The eNB may be requested by the MME to provide an indication whether the Downlink NAS PDU has been successfully delivered to the UE. The eNB then triggers the Downlink NAS Delivery Indication procedure per downlink NAS PDU provided in a DOWNLINK NAS TRANSPORT as specified in TS 23.401 [17].\n\nvi) Reroute NAS Request procedure\n\nFigure 19.2.2.6-6: Reroute NAS Request procedure\n\nThe Reroute NAS Request procedure is used to reroute a NAS message (and there by a UE) to another MME when DCNs are used.\n\nThe procedure is initiated by the MME sending the REROUTE NAS REQUEST message. Upon receiving the REROUTE NAS REQUEST message, the eNB selects a MME in the indicated DCN and sends the INITIAL UE MESSAGE message to the new selected MME as described in TS 23.401 [17]. In case a UE-associated logical S1-connection was established between the MME and the eNB, upon sending (respectively receiving) the REROUTE NAS REQUEST message the MME (respectively eNB) shall locally remove the UE-associated logical S1-connection.\n\n19.2.2.7S1 interface Management procedures\n\n19.2.2.7.1Reset procedure\n\nThe purpose of the Reset procedure is to re-initialize the peer entity or part of the peer entity after node setup and after a failure event occurred. This procedure is initiated by both the eNB and MME.\n\n19.2.2.7.1aeNB initiated Reset procedure\n\nFigure 19.2.2.7.1a-1: eNB initiated Reset procedure\n\n-The eNB triggers the RESET message to indicate that an initialisation in the MME is required. The MME releases the corresponding references and resources.\n\n-Afterwards the MME sends the RESET ACK message to confirm that the resources and references are cleared.\n\n19.2.2.7.1bMME initiated Reset procedure",
+      "answered_by": "retrieval",
+      "confidence": 0.70454857285969,
+      "latency_sec": 0.6557777499992881,
+      "rouge_l": 0.11167512690355332,
+      "bertscore_f1": 0.7500843405723572,
+      "expected_tier": "retrieval",
+      "tier_match": true,
+      "details": {
+        "doc_id": "real_00363",
+        "rerank_logit": 0.8690528273582458,
+        "rerank_confidence": 0.70454857285969,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 655.8
+    },
+    {
+      "query_id": "eval_013",
+      "query_text": "eSIM remote provisioning fails at LPA profile download with HTTP 403",
+      "reference": "LPA (Local Profile Assistant) HTTP 403 during SM-DP+ profile download: (1) Activation code or confirmation code mismatch \u2014 re-check against SM-DP+ portal. (2) SMDP certificate not trusted by device \u2014 verify root CA chain. (3) Device EID not whitelisted in SM-DP+ operator profile. (4) Order state machine issue: profile may already be in 'downloaded' or 'released' state in SM-DP+ \u2014 check order status via M2M or consumer API. (5) Network connectivity: LPA uses HTTPS to SM-DP+ address \u2014 check DNS resolution and firewall rules on the device connection. Collect LPA logs (AT+CSIM or vendor diagnostic) and SM-DP+ server logs correlated by EID and timestamp.",
+      "prediction": "If the ESM cause value is different from #26 \"insufficient resources\", #28 \"unknown PDN type\", #50 \"PDN type IPv4 only allowed\", #51 \"PDN type IPv6 only allowed\", #54 \"PDN connection does not exist\", #57 \"PDN type IPv4v6 only allowed\", #58 \"PDN type non IP only allowed\", #61 \"PDN type Ethernet only allowed\", #65 \"maximum number of EPS bearers reached\", and #66 \"requested APN not supported in current RAT and PLMN combination\", and the Back-off timer value IE is included, the UE shall behave as follows:",
+      "answered_by": "retrieval",
+      "confidence": 0.5879776025110502,
+      "latency_sec": 0.5816021249993355,
+      "rouge_l": 0.05154639175257732,
+      "bertscore_f1": 0.7150095105171204,
+      "expected_tier": "generative",
+      "tier_match": false,
+      "details": {
+        "doc_id": "real_04587",
+        "rerank_logit": 0.3556111454963684,
+        "rerank_confidence": 0.5879776025110502,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 581.6
+    },
+    {
+      "query_id": "eval_014",
+      "query_text": "NB-IoT device cannot complete random access procedure despite strong RSRP",
+      "reference": "NB-IoT RACH failure with good coverage: (1) NPRACH configuration \u2014 check subcarrier spacing, repetition levels, and periodicity in SIB2-NB. (2) Coverage level mismatch \u2014 device may be using wrong coverage enhancement level for its RSRP. (3) Cell capacity: if NPRACH resources are exhausted (congestion), RACH fails silently. (4) Device class: Cat-NB1 vs Cat-NB2 capabilities \u2014 verify device reports correct UE category. (5) Guard band vs in-band vs standalone deployment mode \u2014 device must be configured for the correct NB-IoT deployment type. Check eNB NB-IoT RACH statistics for preamble detection rate and coverage level distribution.",
+      "prediction": "5.3.16.2Initiation\n\nExcept for NB-IoT, upon initiation of the procedure, the UE shall:\n\n1>if T309 is running for the Access Category:\n\n2>consider the access attempt as barred;\n\n1>else if timer T302 is running and the Access Category is neither '2' nor '0':\n\n2>consider the access attempt as barred;\n\n1>else:\n\n2>if the Access Category is '0':\n\n3>consider the access attempt as allowed;\n\n2>else if SystemInformationBlockType25 is not broadcasted:\n\n3>consider the access attempt as allowed;\n\n2>else if ab-PerRSRP is included:\n\n3>if the establishmentCause received from higher layers is set to a value other than emergency:\n\n4>if ab-PerRSRP is set to thresh0:\n\n5>consider access to the cell as barred when in enhanced coverage as specified in TS 36.304 [4];\n\n4>else if ab-PerRSRP is set to thresh1:\n\n5>if the measured RSRP is less than the first entry in rsrp-ThresholdsPrachInfoList:\n\n6>consider access to the cell as barred;\n\n5>else:\n\n6>consider that only the resources indicated for the first CE level are configured;\n\n4>else if ab-PerRSRP is set to thresh2:\n\n5>if the measured RSRP is less than the second entry in rsrp-ThresholdsPrachInfoList:\n\n6>consider access to the cell as barred;\n\n5>else:\n\n6>consider that only the resources indicated for the first and second CE levels are configured;\n\n4>else if ab-PerRSRP is set to thresh3:\n\n5>if the measured RSRP is less than the third entry in rsrp-ThresholdsPrachInfoList:\n\n6>consider access to the cell as barred;\n\n5>else:\n\n6>consider that only the resources indicated for the first, second, and third CE levels are configured;\n\n2>if the Access Category is not '0', and SystemInformationBlockType25 is broadcasted, and access to the cell is not barred due to ab-PerRSRP:",
+      "answered_by": "retrieval",
+      "confidence": 0.6964200803211683,
+      "latency_sec": 0.6001552499992613,
+      "rouge_l": 0.08955223880597016,
+      "bertscore_f1": 0.7235106229782104,
+      "expected_tier": "generative",
+      "tier_match": false,
+      "details": {
+        "doc_id": "real_00955",
+        "rerank_logit": 0.8303081393241882,
+        "rerank_confidence": 0.6964200803211683,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 600.2
+    },
+    {
+      "query_id": "eval_015",
+      "query_text": "IPv4v6 PDN type request rejected by PGW, UE forced to IPv4 only",
+      "reference": "PDN type IPv4v6 rejection (cause code 52 = single address bearers only, or 50 = PDN type IPv6 only allowed): (1) Check PGW APN configuration \u2014 APN may only have IPv4 pool, no IPv6 prefix delegation. (2) HSS subscription: subscribed PDN type may not include IPv4v6. (3) PGW license or platform limit \u2014 some vendors require specific license for dual-stack PDN. (4) UE behavior: after rejection with cause 52 the UE should retry with IPv4 \u2014 verify the retry is successful. (5) If IPv6 is required: provision IPv6 prefix pool on PGW and update APN profile in HSS.",
+      "prediction": "-If the requested PDN type is IPv4 or IPv6, and either the requested PDN type or PDN type IPv4v6 are subscribed, the MME sets the PDN type as requested. Otherwise the PDN connection request is rejected.\n\n-If the requested PDN type is IPv4v6, and both IPv4 and IPv6 PDN types are allowed by subscription but not IPv4v6, the MME shall set the PDN type to IPv4 or IPv6 where the selection between IPv4 and IPv6 is implementation specific. The UE should then initiate the UE requested PDN connectivity procedure to this APN in order to activate a second PDN connection with the other single address PDN type which was not allocated by the network.\n\nNOTE\u00a02:If the MT and TE are separated, the UE might not be able to use reason cause \"single address bearers only\" as a trigger for activating a second single-stack EPS bearer.\n\nThe PDN GW may restrict the usage of a PDN type IPv4v6 as follows.\n\n-If the PDN GW receives a request for PDN type IPv4v6, but the PDN GW operator preferences dictate the use of IPv4 addressing only or IPv6 prefix only for this APN, the PDN type shall be changed to a single address PDN type (IPv4 or IPv6) and a reason cause shall be returned to the UE indicating that only the assigned PDN type is allowed. In this case the UE shall not request another PDN connection to the same APN for the other IP version during the existence of the PDN connection.",
+      "answered_by": "retrieval",
+      "confidence": 0.7309672545046553,
+      "latency_sec": 0.6431739590007055,
+      "rouge_l": 0.13793103448275862,
+      "bertscore_f1": 0.8222330212593079,
+      "expected_tier": "generative",
+      "tier_match": false,
+      "details": {
+        "doc_id": "real_05706",
+        "rerank_logit": 0.9995355606079102,
+        "rerank_confidence": 0.7309672545046553,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 643.2
+    },
+    {
+      "query_id": "eval_016",
+      "query_text": "Device receives ATTACH ACCEPT but immediately sends DETACH REQUEST",
+      "reference": "ATTACH ACCEPT followed by immediate UE-initiated DETACH: (1) PDN connectivity failure post-attach \u2014 if default bearer establishment fails the device may detach. Check ESM cause in Activate Default EPS Bearer Context Request vs reject. (2) Device firmware issue \u2014 known bug in some chipsets where APN configuration mismatch triggers detach. (3) SIM application conflict \u2014 SIM STK applet may be overriding network selection. (4) Device detaches if IMS registration is required but fails immediately (IMS-only device). (5) Test with a different device and same SIM, and same device with a test SIM to isolate device vs subscription. Pull NAS trace from MME.",
+      "prediction": "If a cell change into a new tracking area occurs before the attach procedure is completed, the attach procedure shall be aborted and re-initiated immediately. If a tracking area border is crossed when the ATTACH ACCEPT message has been received but before an ATTACH COMPLETE message is sent, the attach procedure shall be re-initiated. If a GUTI was allocated during the attach procedure, this GUTI shall be used in the attach procedure.\n\nf)Mobile originated detach required\n\nThe attach procedure shall be aborted, and the UE initiated detach procedure shall be performed. The UE shall populate the EPS mobile identity IE in the DETACH REQUEST message with the same UE identity as used in the ATTACH REQUEST message for the aborted attach procedure.\n\ng)Detach procedure collision\n\nIf the UE receives a DETACH REQUEST message from the network in state EMM-REGISTERED-INITIATED and the detach type indicates \"re-attach not required\" and no EMM cause IE, or \"re-attach not required\" and the EMM cause value is not #2 \"IMSI unknown in HSS\", the detach procedure shall be progressed and the attach procedure shall be aborted. If the UE receives a DETACH REQUEST message from the network in state EMM-REGISTERED-INITIATED and the detach type indicates \"re-attach required\", the detach procedure shall be progressed and the UE shall locally release the NAS signalling connection, before re-initiating the attach procedure. Otherwise, the attach procedure shall be progressed and the DETACH REQUEST message shall be ignored.\n\nh)Transmission failure of ATTACH REQUEST message indication from lower layers",
+      "answered_by": "retrieval",
+      "confidence": 0.6973891225473189,
+      "latency_sec": 0.6094100410000465,
+      "rouge_l": 0.11019283746556471,
+      "bertscore_f1": 0.7640620470046997,
+      "expected_tier": "generative",
+      "tier_match": false,
+      "details": {
+        "doc_id": "real_03588",
+        "rerank_logit": 0.8348957896232605,
+        "rerank_confidence": 0.6973891225473189,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 609.4
+    },
+    {
+      "query_id": "eval_017",
+      "query_text": "SMS over SGd interface not delivering messages for LTE-only subscribers without CSFB",
+      "reference": "SGd-based SMS (SGs-less, direct MME-to-SMSC via SGd) delivery failure: (1) SGd (Diameter) interface between MME and SMS-GMSC must be up \u2014 check Diameter peer state. (2) Subscriber must have SMS-over-SGs or SMS-over-SGd activated in HSS \u2014 check subscription flags. (3) MSISDN routing in SMS-GMSC \u2014 for MT SMS, the SMSC must route via SGd path, not MAP/CAP legacy path. (4) P-CSCF and IMS not required for SGd SMS \u2014 but verify feature flag on MME. (5) For MO SMS: check that UE initiates NAS Uplink NAS Transport with SMS payload and MME routes to SGd. Trace both Diameter SGd and NAS on MME to find the break point.",
+      "prediction": "1. Most likely root cause: The SMS over SGd interface issue is likely due to a configuration or routing problem between the MME and the SMS Gateway, preventing SMS messages from being delivered to LTE-only subscribers without Circuit-Switched Fallback (CSFB).\n2. Diagnostic steps: \n1. Verify the SGd interface configuration on the MME and SMS Gateway.\n2. Check the routing tables and DNS resolution for the SMS Gateway.\n3. Analyze the MME logs for any error messages related to SGd interface or SMS delivery.\n4. Use tracing tools to capture SGd interface messages and verify the SMS message flow.\n5. Validate the PDN connection and bearer establishment for the affected subscribers.\n3. Remediation: \n1. Update the SGd interface configuration on the MME and SMS Gateway to ensure correct routing and parameter settings.\n2. Verify and correct the DNS resolution and routing tables for the SMS Gateway.\n3. Apply the necessary patches or software updates to the MME and SMS Gateway to resolve any known issues related to SGd interface or SMS delivery.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 1.8550020829998175,
+      "rouge_l": 0.19377162629757785,
+      "bertscore_f1": 0.8062729239463806,
+      "expected_tier": "generative",
+      "tier_match": true,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 378,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 1855.0
+    },
+    {
+      "query_id": "eval_018",
+      "query_text": "Voice call audio drops out for first 2 seconds then recovers on every call",
+      "reference": "Systematic 2-second audio gap at call start points to dedicated bearer establishment timing. (1) Measure time between SIP 200 OK and QCI 1 dedicated bearer activation \u2014 if > 1s, bearer setup is the culprit. (2) Jitter buffer pre-fill: some MGWs/UEs buffer before playing \u2014 check jitter buffer configuration. (3) Early media / ringback timing \u2014 is audio gate opening before RTP arrives? (4) RTCP negotiation delay on SBC \u2014 some SBCs wait for RTCP before opening audio. (5) SRTP key exchange \u2014 if DTLS or SDES handshake takes > 1s, media is delayed. Capture RTP at P-CSCF and UE simultaneously and measure first-packet timestamp.",
+      "prediction": "Most likely root cause: The issue is likely due to a delay in the establishment of the voice bearer or a problem with the codec negotiation, causing a temporary audio dropout at the beginning of each call.\n\nDiagnostic steps:\n1. Check the call setup signaling messages to identify any delays or errors in the voice bearer establishment.\n2. Analyze the RAN-side logs to verify if there are any issues with the codec negotiation or voice packet transmission.\n3. Verify the eNodeB configuration to ensure that the voice settings are correctly provisioned.\n4. Use a protocol analyzer to capture and examine the SIP or Diameter signaling messages during call setup.\n5. Check the UE's (User Equipment) capability and configuration to ensure it supports the negotiated codec.\n\nRemediation:\n1. Verify and adjust the eNodeB's voice settings, such as the codec configuration and QoS parameters, to ensure proper voice bearer establishment.\n2. Optimize the network's signaling timers and thresholds to minimize delays during call setup.\n3. Perform a software or configuration update on the eNodeB or UE if necessary to resolve any known issues related to voice call setup and audio quality.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 2.120714916999532,
+      "rouge_l": 0.10847457627118644,
+      "bertscore_f1": 0.7588053345680237,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 392,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 2120.7
+    },
+    {
+      "query_id": "eval_019",
+      "query_text": "MIMO rank-2 throughput significantly worse than rank-1 for stationary UEs",
+      "reference": "Rank-2 performing worse than rank-1 for stationary UEs indicates spatial channel issues: (1) Antenna cross-correlation too high \u2014 if physical antenna separation is insufficient, rank-2 spatial streams interfere. (2) Antenna port calibration mismatch \u2014 check RF calibration on both TX ports. (3) Precoding matrix indicator (PMI) feedback from UE \u2014 stationary UE should report stable PMI. If PMI is unstable, check UE feedback or downlink channel estimation. (4) CSI-RS configuration \u2014 incorrect CSI pilot power prevents accurate channel estimation. (5) UE receiver capability: some devices have poor rank-2 implementation. Test with a reference UE to isolate.",
+      "prediction": "1. Most likely root cause: The most likely root cause is poor orthogonality between the multiple transmit antennas, likely due to insufficient antenna spacing or correlation, resulting in reduced MIMO gains.\n2. Diagnostic steps: \n    1. Check the antenna configuration and spacing on the eNodeB to ensure they meet the vendor's recommendations.\n    2. Analyze the channel state information (CSI) reports from the UEs to determine the channel conditions.\n    3. Measure the received signal strength (RSRP) and signal-to-interference-plus-noise ratio (SINR) for both rank-1 and rank-2 transmissions.\n    4. Verify that the UE is capable of supporting MIMO rank-2 and that it is properly configured.\n    5. Perform a drive test or use a channel emulator to simulate different propagation conditions and assess MIMO performance.\n3. Remediation: \n    1. Adjust the antenna configuration or add additional antennas to improve orthogonality and reduce correlation.\n    2. Optimize the eNodeB's transmission parameters, such as precoding matrices, to improve MIMO performance.\n    3. Consider upgrading the eNodeB software or hardware to support advanced MIMO features, such as beamforming or massive MIMO.",
+      "answered_by": "generative",
+      "confidence": 0.6,
+      "latency_sec": 2.028885167000226,
+      "rouge_l": 0.11552346570397114,
+      "bertscore_f1": 0.7936596870422363,
+      "expected_tier": "retrieval",
+      "tier_match": false,
+      "details": {
+        "backend": "groq",
+        "model": "llama-3.3-70b-versatile",
+        "tokens_used": 424,
+        "finish_reason": "stop",
+        "retrieved_context_docs": 0
+      },
+      "latency_ms": 2028.9
+    },
+    {
+      "query_id": "eval_020",
+      "query_text": "HSS returning Error-User-Unknown for valid IMSI during TAU procedure",
+      "reference": "HSS Diameter error DIAMETER_ERROR_USER_UNKNOWN (5001) on S6a Update Location Request during TAU: (1) IMSI provisioned in HSS? Check directly in HSS subscriber DB \u2014 provisioning error is common. (2) IMSI format mismatch \u2014 HSS may store with/without leading zeros. (3) If moving between MMEs (inter-MME TAU) \u2014 old MME's IMSI de-registration may not have reached HSS. (4) HSS replication lag in geo-redundant setups \u2014 subscriber created on primary, TAU hit secondary before replication. (5) Subscription state: IMSI may be marked inactive in HSS (e.g. SIM swap in progress). Check HSS audit logs for the specific IMSI with full trace.",
+      "prediction": "-If the DETACH REQUEST message contains EMM cause #2 \"IMSI unknown in HSS\", the UE will follow the procedure as described below for the detach type \"IMSI detach\".\n\nEPS detach containing detach type \"IMSI detach\":\n\nIf the UE receives a DETACH REQUEST message from the network in state EMM-SERVICE-REQUEST-INITIATED, the UE shall take the following actions:",
+      "answered_by": "retrieval",
+      "confidence": 0.6415823075648804,
+      "latency_sec": 0.6648222080002597,
+      "rouge_l": 0.11042944785276074,
+      "bertscore_f1": 0.7579482197761536,
+      "expected_tier": "retrieval",
+      "tier_match": true,
+      "details": {
+        "doc_id": "real_04124",
+        "rerank_logit": 0.5822384357452393,
+        "rerank_confidence": 0.6415823075648804,
+        "bm25_candidates": 20,
+        "dense_candidates": 20,
+        "fused_candidates": 10
+      },
+      "latency_ms": 664.8
+    }
+  ]
+}

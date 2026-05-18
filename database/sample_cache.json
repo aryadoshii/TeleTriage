@@ -1,0 +1,127 @@
+{
+  "high packet loss": {
+    "answer": "Likely causes: RF interference, antenna misalignment, or backhaul congestion. Steps: (1) Check RSRP/SINR on affected cells. (2) Verify antenna tilt and azimuth against planning spec. (3) Run ping/traceroute to isolate whether loss is radio-side or transport-side. (4) Check for IP/MTU mismatches on S1 interface.",
+    "source": "3GPP TS 36.300",
+    "added": "2026-04-18"
+  },
+  "network congestion": {
+    "answer": "Enable QoS policies and traffic shaping. Steps: (1) Identify top talkers via NetFlow. (2) Apply DSCP marking for voice/video. (3) Configure WRED on congested interfaces. (4) Consider capacity upgrade if utilization consistently >70%.",
+    "source": "RFC 2475",
+    "added": "2026-04-18"
+  },
+  "sip registration failing": {
+    "answer": "Check: (1) SBC reachability via ping/OPTIONS ping. (2) Credentials and realm in SIP 401/407 challenge. (3) NAT traversal (STUN/ICE config). (4) DNS SRV records for _sip._udp and _sip._tcp. (5) Firewall not blocking 5060/5061. Logs on SBC will show exact failure reason.",
+    "source": "RFC 3261",
+    "added": "2026-04-18"
+  },
+  "call drop": {
+    "answer": "Common causes: poor coverage (RSRP < -110 dBm), handover failure, radio link failure, or core network issue. Steps: (1) Pull call trace for Release Cause IE. (2) Check neighbor relation for the serving cell. (3) Verify X2 interface health. (4) Look for TA (Timing Advance) violations indicating UE out of range.",
+    "source": "3GPP TS 36.331",
+    "added": "2026-04-18"
+  },
+  "handover failure": {
+    "answer": "Diagnostic steps: (1) Check if source/target cells are in each other's neighbor lists. (2) Verify X2 setup between eNodeBs. (3) Look at measurement reports - is A3 event triggering? (4) Check handover margin and time-to-trigger settings. (5) Review target cell load - PRB utilization may be rejecting handover.",
+    "source": "3GPP TS 36.423",
+    "added": "2026-04-18"
+  },
+  "weak signal": {
+    "answer": "RSRP below -110 dBm indicates weak coverage. Check: (1) Distance from serving cell. (2) Obstructions (buildings, foliage). (3) Antenna tilt/azimuth. (4) Nearby cell contributing to interference (low SINR despite good RSRP). Solutions: add small cell, adjust antenna, or deploy DAS indoors.",
+    "source": "3GPP TS 36.214",
+    "added": "2026-04-18"
+  },
+  "high latency": {
+    "answer": "Investigate end-to-end: (1) UE-to-eNB (radio scheduling delays, check PRB availability). (2) eNB-to-EPC (S1-U backhaul - ping for RTT and jitter). (3) EPC-to-PDN (SGi latency). (4) Application server response time. Tools: traceroute, mtr, and vendor-specific KPI counters for Scheduling Delay.",
+    "source": "3GPP TS 23.203",
+    "added": "2026-04-18"
+  },
+  "jitter on voice": {
+    "answer": "Voice requires jitter <30ms. Steps: (1) Verify QoS markings (DSCP EF for voice bearer). (2) Check jitter buffer config on media gateway. (3) Look for buffer bloat on transport links. (4) Ensure voice is on dedicated QCI 1 bearer, not default QCI 9. (5) Investigate CPU contention on SBC.",
+    "source": "ITU-T G.114",
+    "added": "2026-04-18"
+  },
+  "volte call failure": {
+    "answer": "Check IMS chain: (1) UE VoLTE capability signaled in Attach. (2) Dedicated QCI 5 SIP signaling bearer established. (3) P-CSCF discovery via PCO. (4) IMS registration complete (200 OK to REGISTER). (5) INVITE reaches S-CSCF. (6) Dedicated QCI 1 voice bearer established post-INVITE. Logs on P-CSCF and S-CSCF show where it breaks.",
+    "source": "3GPP TS 23.228",
+    "added": "2026-04-18"
+  },
+  "throughput degradation": {
+    "answer": "Diagnose layer by layer: (1) Radio: check MCS being allocated - low MCS means poor channel. (2) SINR - below 10dB significantly caps throughput. (3) PRB availability - cell load may be starving the user. (4) Transport: backhaul saturated? (5) TCP issues - window size, retransmissions. Use iperf3 for ground truth.",
+    "source": "3GPP TS 36.213",
+    "added": "2026-04-18"
+  },
+  "lte attach failure": {
+    "answer": "EMM cause codes tell the story. Common: (2) IMSI unknown in HSS - provisioning issue. (7) EPS services not allowed - subscription restriction. (13) Roaming not allowed. (15) No suitable cells - coverage issue. Pull attach trace from MME and correlate with HSS logs. Verify APN configuration matches subscriber profile.",
+    "source": "3GPP TS 24.301",
+    "added": "2026-04-18"
+  },
+  "low sinr": {
+    "answer": "SINR below 0 dB means severe interference. Steps: (1) Identify interferer - PCI collision? Use spectrum analyzer or scanner. (2) Check cell overlap - may need to tilt down / reduce power. (3) Verify neighbor list accuracy. (4) Consider ICIC/eICIC if co-channel deployment. (5) For uplink SINR, check for PIM sources on site.",
+    "source": "3GPP TS 36.214",
+    "added": "2026-04-18"
+  },
+  "dns resolution failure": {
+    "answer": "Steps: (1) Verify DNS server IPs pushed to UE via PCO in PDN setup. (2) From UE, nslookup against DNS server. (3) Check DNS server health - is it responding? (4) Packet capture on SGi - does DNS query egress? (5) Firewall/ACL blocking port 53? (6) For enterprise APN, verify split DNS config.",
+    "source": "RFC 1035",
+    "added": "2026-04-18"
+  },
+  "pdn connectivity failure": {
+    "answer": "Cause codes (ESM) to investigate: (26) Insufficient resources - SGW/PGW overload. (27) Missing or unknown APN. (29) User authentication failed. (31) Request rejected by SGW. Check: APN configured on UE matches HSS. PGW available. IP pool not exhausted. OCS/PCRF reachable.",
+    "source": "3GPP TS 24.301",
+    "added": "2026-04-18"
+  },
+  "roaming registration failure": {
+    "answer": "Check: (1) Roaming agreement active between HPLMN and VPLMN. (2) IMSI allowed in OCS for roaming. (3) Diameter S6a interface between VPLMN MME and HPLMN HSS. (4) Diameter edge agents (DEAs) in both networks. (5) SCCP routing on STP for S6a. Update Location Request should trigger - trace it.",
+    "source": "3GPP TS 29.272",
+    "added": "2026-04-18"
+  },
+  "ims registration timeout": {
+    "answer": "Steps: (1) Verify P-CSCF address in PCO at attach time. (2) Is dedicated QCI 5 bearer established? (3) Does REGISTER reach P-CSCF (transport issue?). (4) Does P-CSCF route to I-CSCF? (5) Does HSS return user profile to S-CSCF? Trace on Cx/Dx/Sh interfaces. Timer T1 retransmissions visible in UE logs.",
+    "source": "3GPP TS 24.229",
+    "added": "2026-04-18"
+  },
+  "enodeb unavailable": {
+    "answer": "Check in order: (1) Hardware alarms on OMC - RF units, baseband, clock. (2) S1-MME link status to MME (SCTP heartbeats). (3) S1-U transport to SGW. (4) GPS/clock sync - eNB won't carry traffic without sync. (5) Power/cooling at site. (6) Software upgrade in progress? Verify cell activation status on OMC.",
+    "source": "3GPP TS 36.413",
+    "added": "2026-04-18"
+  },
+  "paging failure": {
+    "answer": "Steps: (1) Is the UE registered (check MME for last TAU)? (2) TA/TAC in paging message matches UE's last known TA? (3) Paging occasion calculation correct (DRX cycle)? (4) Over-paging causing collisions? (5) Ran paging retries exhausted? Check MME paging statistics and correlated eNB paging logs.",
+    "source": "3GPP TS 36.304",
+    "added": "2026-04-18"
+  },
+  "authentication failure": {
+    "answer": "EMM cause 3 = Illegal UE. Possible: (1) HSS has wrong Ki/OPc for IMSI. (2) SIM cloned or replay attack detected (SQN out of sync). (3) AV not fetched correctly from HSS. Steps: pull auth trace from MME, check RAND/AUTN/XRES vs UE response. If SQN drift, HSS may need to resync.",
+    "source": "3GPP TS 33.401",
+    "added": "2026-04-18"
+  },
+  "ip pool exhaustion": {
+    "answer": "APN IP pool empty - new PDN requests fail with cause 26. Steps: (1) On PGW, check pool utilization - usually a counter. (2) Look for stale sessions (UEs detached but session not released). (3) Audit timer-based cleanup. (4) Add subnet to pool as short-term fix. (5) Long-term: move to IPv6 or larger pool sizing.",
+    "source": "3GPP TS 29.274",
+    "added": "2026-04-18"
+  },
+  "cs fallback failure": {
+    "answer": "CSFB steps: UE in LTE receives paging for CS call, falls back to 2G/3G. Failures: (1) Sv interface between MME and MSC down. (2) SGs registration missing. (3) No 2G/3G coverage at UE location - check neighbor list. (4) Target RAT refuses RAU (circuit switched not allowed). Debug via MME CSFB counters and Sv trace.",
+    "source": "3GPP TS 23.272",
+    "added": "2026-04-18"
+  },
+  "cell not visible to ue": {
+    "answer": "Steps: (1) Is cell on-air? Check OMC. (2) Is UE in the coverage area (RSRP measurable)? (3) Is PCI in UE's neighbor list? (4) SIB1 barring status - is cell barred? (5) PLMN list in SIB1 includes UE's home PLMN? (6) Is UE capability (band support) matching cell's frequency?",
+    "source": "3GPP TS 36.331",
+    "added": "2026-04-18"
+  },
+  "high prb utilization": {
+    "answer": "PRB utilization >70% indicates capacity issue. Options: (1) Carrier aggregation - add secondary cell. (2) Sector split. (3) Densification with small cells. (4) Spectrum refarm from lower-value tech (2G/3G). (5) Check for heavy users monopolizing resources - QoS enforcement may help. Short-term: adjust scheduler priorities.",
+    "source": "3GPP TS 36.213",
+    "added": "2026-04-18"
+  },
+  "s1 setup failure": {
+    "answer": "eNB cannot establish S1 to MME. Check: (1) SCTP association up (netstat on MME). (2) IP connectivity / ACLs. (3) eNB certificate matches MME trust store (if IPsec). (4) MME pool GUMMEI / PLMN list matches eNB config. (5) Supported TA list includes eNB's TAC. Logs on MME will show S1SetupFailure cause.",
+    "source": "3GPP TS 36.413",
+    "added": "2026-04-18"
+  },
+  "voice quality degraded": {
+    "answer": "MOS below 3.5 is poor. Check: (1) Codec in use (AMR-WB preferred over AMR-NB). (2) Packet loss >1% on voice bearer. (3) Jitter >30ms. (4) One-way delay >150ms (ITU-T G.114). (5) Jitter buffer underruns/overruns on MGW. (6) SBC transcoding adding artifacts. Capture RTP stream and analyze with Wireshark voice stats.",
+    "source": "ITU-T P.800",
+    "added": "2026-04-18"
+  }
+}

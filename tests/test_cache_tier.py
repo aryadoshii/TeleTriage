@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from teletriage.tiers.cache_tier import CacheTier, _normalize
-from teletriage.types import Query, TierName
+from backend.tiers.cache_tier import CacheTier, _normalize
+from backend.types import Query, TierName
 
 
 @pytest.fixture
@@ -114,7 +114,7 @@ class TestCacheTier:
     def test_should_delegate_on_low_confidence(self, tier: CacheTier):
         # Simulate a fuzzy match just above threshold but below min_confidence
         # (This tests the router contract, not the tier's internal scoring)
-        from teletriage.types import TierResult
+        from backend.types import TierResult
 
         low_conf = TierResult(
             tier=TierName.CACHE, answer="something", confidence=0.50
