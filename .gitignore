@@ -33,7 +33,8 @@ models/
 *.faiss
 *.index
 
-# Database — keep seed files, ignore scraped/generated large files
+# Database — keep seed files, ignore indexes and scraped/generated large files
+database/indexes/
 database/raw_zips/
 database/real_kb.jsonl
 database/real_cache_candidates.jsonl

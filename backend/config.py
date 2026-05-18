@@ -49,8 +49,8 @@ class RetrievalTierConfig(BaseModel):
     rerank_top_k: int = 10
     final_top_k: int = 1
     rrf_k: int = 60
-    min_rerank_score: float = 0.5
-    min_confidence: float = 0.70
+    min_rerank_score: float = 0.20  # calibrated via 3-point ablation curve, 2026-05-03
+    min_confidence: float = 0.50
 
 
 class GenerativeTierConfig(BaseModel):

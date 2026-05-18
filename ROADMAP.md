@@ -10,14 +10,14 @@ Detailed plan for Phases 2-7. Each phase lists **what to build**, **concepts to 
 
 ### Files to create
 ```
-src/teletriage/retrieval/
+backend/retrieval/
 ├── embedder.py     # Wrap sentence-transformers (BGE-small)
 ├── bm25.py         # Wrap rank_bm25
 ├── dense.py        # FAISS index builder + searcher
 ├── hybrid.py       # Reciprocal Rank Fusion
 └── reranker.py     # Cross-encoder wrapper (bge-reranker-base)
 ```
-Then wire them up in `src/teletriage/tiers/retrieval_tier.py` (TODO already marked).
+Then wire them up in `backend/tiers/retrieval_tier.py` (TODO already marked).
 
 ### Concepts to learn deeply
 1. **BM25 math.** Why `k1` (term saturation) and `b` (length normalization)? How BM25 descends from TF-IDF. Why it still beats dense retrieval on rare terms / exact matches.
@@ -52,7 +52,7 @@ Then wire them up in `src/teletriage/tiers/retrieval_tier.py` (TODO already mark
 
 ### Files to create
 ```
-src/teletriage/generation/
+backend/generation/
 └── llm_client.py   # Unified interface over Groq, Gemini, local transformers
 ```
 
@@ -92,7 +92,7 @@ def make_client(backend: str, api_key: str) -> LLMClient: ...
 
 ### Files to create
 ```
-src/teletriage/evaluation/
+backend/evaluation/
 ├── metrics.py      # ROUGE, BERTScore, latency percentiles
 ├── evaluator.py    # Run system over test set, aggregate metrics
 └── test_set.py     # Load held-out eval queries
@@ -157,13 +157,15 @@ Views:
 - Top "misses" (queries that always fall through to generative — candidates for cache promotion)
 - Per-tier confidence distribution
 
+Query logging is written to `outputs/query_metrics.jsonl`.
+
 ---
 
 ## How to use Claude Code for each phase
 
 Open VS Code → open the project → start Claude Code. Prompts that work well:
 
-1. **For a specific file:** *"Implement `src/teletriage/retrieval/embedder.py` following the interface sketched in `retrieval_tier.py`. Use sentence-transformers with BGE-small. Support batched encoding. Add docstrings explaining mean-pooling and L2 normalization."*
+1. **For a specific file:** *"Implement `backend/retrieval/embedder.py` following the interface sketched in `retrieval_tier.py`. Use sentence-transformers with BGE-small. Support batched encoding. Add docstrings explaining mean-pooling and L2 normalization."*
 
 2. **For wiring up a phase:** *"Phase 2 is ready to wire up. Read `retrieval_tier.py` TODOs and the individual retrieval modules. Fill in `RetrievalTier.answer()` with the BM25 → dense → RRF → rerank cascade. Add unit tests in `tests/test_retrieval_tier.py`."*
 
