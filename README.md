@@ -144,6 +144,9 @@ uv run teletriage query "something completely novel"
 
 # 6. Run the evaluation harness
 uv run python scripts/run_eval.py
+
+# 7. Launch the observability dashboard
+uv run streamlit run scripts/dashboard.py
 ```
 
 ---
@@ -244,9 +247,9 @@ All three thresholds were empirically determined, not guessed. The CAG fuzzy thr
 - ✅ **Phase 2** — hybrid RAG: BM25 + dense + RRF + cross-encoder rerank, 57 tests
 - ✅ **Phase 3** — generative tier: Groq → Gemini → local Qwen fallback chain, 34 tests
 - ✅ **Phase 4** — evaluation harness: ROUGE/BERTScore/latency, 3-point threshold calibration
-- 🚧 **Phase 5** — real data: 3GPP TS docs, Cisco/Nokia troubleshooting guides
-- 🔲 **Phase 6** — adaptive cache: promote validated generative answers into CAG
-- 🔲 **Phase 7** — observability dashboard: Streamlit UI over query logs
+- ✅ **Phase 5** — real data pipeline: 7,181 chunks from 5 3GPP TS specs, MinHash dedup, synth Q&A generation
+- ✅ **Phase 6** — adaptive cache promoter: 3-gate quality filter (confidence + length + dedup), JSONL persistence
+- ✅ **Phase 7** — observability dashboard: Streamlit UI with Live Query, Eval Results, Query Log, Cache Inspector
 
 ---
 
