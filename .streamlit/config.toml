@@ -1,0 +1,5 @@
+[server]
+# Prevents Streamlit's watcher from introspecting transformers submodules,
+# which triggers dozens of ModuleNotFoundError: No module named 'torchvision'
+# warnings at startup (harmless but noisy).
+fileWatcherType = "poll"

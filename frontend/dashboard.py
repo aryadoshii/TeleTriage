@@ -858,7 +858,7 @@ elif "Live Query" in page:
             )
             with col:
                 if st.button(f"{icon} {label}", key=f"pill_{label[:25]}",
-                             use_container_width=True):
+                             width='stretch'):
                     st.session_state["query_text"] = label
                     st.rerun()
 
@@ -879,7 +879,7 @@ elif "Live Query" in page:
 
     col_btn, col_hint = st.columns([1, 4])
     with col_btn:
-        run = st.button("Run Query →", use_container_width=True)
+        run = st.button("Run Query →", width='stretch')
     with col_hint:
         st.markdown(
             "<div style='padding:0.6rem 0;font-size:0.8rem;color:#475569;'>"
@@ -1061,7 +1061,7 @@ elif "Eval Results" in page:
                 ))
                 fig.update_layout(**plotly_fig_base(), height=220, showlegend=True,
                                   legend=dict(orientation="h", y=-0.1, font=dict(size=10)))
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
 
         with col2:
             st.markdown("""
@@ -1081,7 +1081,7 @@ elif "Eval Results" in page:
                     textfont=dict(family="JetBrains Mono", size=11, color="#e2e8f0"),
                 ))
                 fig.update_layout(**plotly_fig_base(), height=220, yaxis_range=[0.6, 0.9])
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
 
         with col3:
             st.markdown("""
@@ -1099,7 +1099,7 @@ elif "Eval Results" in page:
                 textfont=dict(family="JetBrains Mono", size=11, color="#e2e8f0"),
             ))
             fig.update_layout(**plotly_fig_base(), height=220)
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
 
         # Calibration history table
         if len(reports) > 1:
@@ -1128,7 +1128,7 @@ elif "Eval Results" in page:
                 if str(row["Run"]).startswith("★"):
                     return ["background-color:rgba(250,204,21,0.12);color:#fbbf24;font-weight:600"] * len(row)
                 return [""] * len(row)
-            st.dataframe(df.style.apply(_highlight_best, axis=1), use_container_width=True, hide_index=True)
+            st.dataframe(df.style.apply(_highlight_best, axis=1), width='stretch', hide_index=True)
 
         # Per-query breakdown
         st.markdown("""<hr>""", unsafe_allow_html=True)
@@ -1165,7 +1165,7 @@ elif "Eval Results" in page:
                     "Tier Match": "✓" if q.get("tier_match") else "✗",
                 })
             df = pd.DataFrame(rows)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width='stretch', hide_index=True)
 
             csv = df.to_csv(index=False)
             st.download_button(
@@ -1238,7 +1238,7 @@ elif "Query Log" in page:
             ))
             fig.update_layout(**plotly_fig_base(), height=240, showlegend=True,
                               legend=dict(orientation="h", y=-0.15, font=dict(size=10)))
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
 
         with col2:
             st.markdown("""
@@ -1250,7 +1250,7 @@ elif "Query Log" in page:
             display_df["Query"] = display_df["Query"].str[:55] + "…"
             display_df["Confidence"] = display_df["Confidence"].apply(lambda x: f"{x:.0%}")
             display_df["Latency ms"] = display_df["Latency ms"].apply(lambda x: f"{x:.0f}")
-            st.dataframe(display_df.head(20), use_container_width=True, hide_index=True)
+            st.dataframe(display_df.head(20), width='stretch', hide_index=True)
 
         # Top misses
         generative_rows = df[df["answered_by"] == "generative"]
@@ -1271,7 +1271,7 @@ elif "Query Log" in page:
                 """, unsafe_allow_html=True)
                 miss_df = low_conf[["query", "confidence", "latency_ms"]].copy()
                 miss_df.columns = ["Query", "Confidence", "Latency ms"]
-                st.dataframe(miss_df, use_container_width=True, hide_index=True)
+                st.dataframe(miss_df, width='stretch', hide_index=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1329,7 +1329,7 @@ elif "Cache Inspector" in page:
             "Added": v.get("added", "—"),
         })
     df = pd.DataFrame(rows)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width='stretch', hide_index=True)
 
     col_dl, _ = st.columns([1, 4])
     with col_dl:
@@ -1383,4 +1383,4 @@ elif "Cache Inspector" in page:
         """, unsafe_allow_html=True)
         add_rows = [{"Question": r.get("question",""), "Source": r.get("source",""),
                      "Confidence": f"{r.get('confidence',0):.2f}"} for r in additions]
-        st.dataframe(pd.DataFrame(add_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(add_rows), width='stretch', hide_index=True)
