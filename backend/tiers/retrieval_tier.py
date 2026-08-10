@@ -37,6 +37,9 @@ Startup note:
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from backend.config import get_config
 from backend.retrieval import (
     BM25Retriever,
@@ -47,6 +50,33 @@ from backend.retrieval import (
 )
 from backend.tiers.base import BaseTier
 from backend.types import Query, TierName, TierResult
+
+
+def load_index_manifest(index_dir: Path) -> dict | None:
+    """
+    Load database/indexes/manifest.json if present.
+
+    The manifest is written by scripts/build_index.py and records which KB
+    file, doc count, and embedder the live indexes were actually built
+    from — the ground truth for "what is retrieval actually searching,"
+    independent of whatever config/config.yaml currently points at.
+
+    Returns None for indexes built before this feature existed, or if the
+    file is missing/corrupt — callers must treat that as "unknown," not
+    an error, so older indexes keep working.
+
+    Standalone module-level function (not a method) so callers that only
+    want the manifest — `teletriage info`, the dashboard's mismatch check —
+    can read it without paying for a full RetrievalTier (embedder + FAISS +
+    cross-encoder model loads).
+    """
+    manifest_path = index_dir / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        return json.loads(manifest_path.read_text())
+    except Exception:
+        return None
 
 
 class RetrievalTier(BaseTier):
@@ -69,6 +99,10 @@ class RetrievalTier(BaseTier):
 
         # Cross-encoder is loaded fresh (no serialised state needed).
         self._reranker = CrossEncoderReranker(self._cfg.reranker_model)
+
+        # Which KB these indexes were actually built from — None if the
+        # indexes predate manifest.json. Never raises on absence.
+        self.index_manifest = load_index_manifest(index_dir)
 
     def answer(self, query: Query) -> TierResult:
         start = self._now()

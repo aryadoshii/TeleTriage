@@ -7,6 +7,8 @@ Run:
 """
 from __future__ import annotations
 
+import ast
+import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -17,6 +19,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] ))
+
+from backend.config import get_config
 
 # ─── Page config ──────────────────────────────────────────────────────
 st.set_page_config(
@@ -433,7 +437,8 @@ def glass_header(title: str, subtitle: str = "") -> None:
 
 
 def load_eval_reports() -> dict[str, dict]:
-    log_dir = PROJECT_ROOT / "logs"
+    cfg = get_config()
+    log_dir = cfg.resolve_path(cfg.paths.log_dir)
     reports = {}
     if log_dir.exists():
         for f in sorted(log_dir.glob("eval_*.json"), reverse=True):
@@ -446,7 +451,8 @@ def load_eval_reports() -> dict[str, dict]:
 
 
 def load_query_log() -> list[dict]:
-    path = PROJECT_ROOT / "logs" / "query_metrics.jsonl"
+    cfg = get_config()
+    path = cfg.resolve_path(cfg.observability.metrics_file)
     if not path.exists():
         return []
     rows = []
@@ -459,14 +465,16 @@ def load_query_log() -> list[dict]:
 
 
 def load_cache() -> dict:
-    p = PROJECT_ROOT / "data" / "sample_cache.json"
+    cfg = get_config()
+    p = cfg.resolve_path(cfg.paths.cache_file)
     if p.exists():
         return json.loads(p.read_text())
     return {}
 
 
 def load_cache_additions() -> list[dict]:
-    p = PROJECT_ROOT / "data" / "cache_additions.jsonl"
+    cfg = get_config()
+    p = cfg.resolve_path(cfg.paths.cache_file).parent / "cache_additions.jsonl"
     if not p.exists():
         return []
     rows = []
@@ -478,22 +486,153 @@ def load_cache_additions() -> list[dict]:
     return rows
 
 
-def count_kb_chunks() -> int:
-    for name in ("real_kb.jsonl", "sample_kb.jsonl"):
-        p = PROJECT_ROOT / "data" / name
-        if p.exists():
-            return sum(1 for l in p.read_text().splitlines() if l.strip())
-    return 0
+def count_kb_chunks() -> tuple[int, str]:
+    """
+    Count lines in the KB file the system is actually configured to search
+    — cfg.paths.knowledge_base, resolved via config. Deliberately no
+    fallback to whichever *_kb.jsonl happens to exist on disk: reporting a
+    different file's doc count than the one retrieval actually indexes
+    would silently misrepresent the corpus the system searches.
+
+    Returns (doc_count, filename).
+    """
+    cfg = get_config()
+    p = cfg.resolve_path(cfg.paths.knowledge_base)
+    if not p.exists():
+        return 0, p.name
+    count = sum(1 for l in p.read_text().splitlines() if l.strip())
+    return count, p.name
 
 
-def count_tests() -> int:
+def _sha256_prefix(path: Path, n_bytes: int = 1_000_000) -> str:
+    """SHA-256 over the first n_bytes of a file.
+
+    Mirrors scripts/build_index.py's manifest hash (same n_bytes) so a
+    hash computed here is directly comparable to manifest["kb_sha256"]
+    without re-hashing a potentially multi-MB KB file in full.
+    """
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        h.update(f.read(n_bytes))
+    return h.hexdigest()
+
+
+def kb_index_mismatch() -> dict | None:
+    """
+    Detect whether the built indexes were made from a different KB than
+    the one currently configured.
+
+    Prefers database/indexes/manifest.json (written by
+    scripts/build_index.py): compares kb_filename AND the sha256 of the
+    first 1MB against the configured KB. The hash check matters because a
+    doc-count-only comparison can't see a same-named file whose *content*
+    changed, or catch two genuinely different KBs that happen to have the
+    same number of lines.
+
+    Falls back to comparing faiss_docs.json's length against the
+    configured KB's line count only when no manifest exists (older
+    indexes, or manifest.json was deleted). That fallback is explicitly
+    weaker — it's a heuristic, not proof — so the returned dict tags which
+    method was used and the caller renders a correspondingly hedged message.
+
+    Returns None if no index is built yet, or if everything matches.
+    """
+    cfg = get_config()
+    index_dir = cfg.resolve_path(cfg.paths.faiss_index_dir)
+    configured_kb = cfg.resolve_path(cfg.paths.knowledge_base)
+    configured_count, configured_name = count_kb_chunks()
+
+    manifest_path = index_dir / "manifest.json"
+    manifest = None
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except Exception:
+            manifest = None
+
+    if manifest is not None:
+        mismatched = manifest.get("kb_filename") != configured_name
+        if not mismatched and configured_kb.exists():
+            mismatched = manifest.get("kb_sha256") != _sha256_prefix(configured_kb)
+        if not mismatched:
+            return None
+        return {
+            "method": "manifest",
+            "index_kb": manifest.get("kb_filename", "?"),
+            "index_docs": manifest.get("n_docs", "?"),
+            "built_at": manifest.get("built_at", "?"),
+            "configured_kb": configured_name,
+            "configured_docs": configured_count,
+        }
+
+    # No manifest (older indexes) — fall back to the weaker doc-count-only
+    # heuristic that used to be the only check available.
+    docs_path = index_dir / "faiss_docs.json"
+    if not docs_path.exists():
+        return None
+    try:
+        index_count = len(json.loads(docs_path.read_text()))
+    except Exception:
+        return None
+    if index_count == configured_count:
+        return None
+    return {
+        "method": "doc_count",
+        "index_docs": index_count,
+        "configured_kb": configured_name,
+        "configured_docs": configured_count,
+    }
+
+
+def _decorators_mark_slow_or_integration(decorators: list) -> bool:
+    for dec in decorators:
+        target = dec.func if isinstance(dec, ast.Call) else dec
+        if isinstance(target, ast.Attribute) and target.attr in ("slow", "integration"):
+            return True
+    return False
+
+
+def count_tests() -> tuple[int, int]:
+    """
+    Count test functions across tests/test_*.py via source AST.
+
+    Every test in this project lives inside a test class, so a naive
+    "\\ndef test_" substring count (or a regex anchored at column 0) misses
+    all of them — they're indented. Parsing the AST sidesteps indentation
+    entirely and also lets us split the total into "fast" vs "slow" by
+    checking for @pytest.mark.slow / @pytest.mark.integration on the
+    function itself or its enclosing class (marks apply to every method
+    in a marked class — see tests/test_retrieval_tier.py's TestEmbedder,
+    TestDenseRetriever, TestReranker, TestRetrievalTier and
+    tests/test_generative_tier.py's TestGroqIntegration).
+
+    Returns (fast_count, total_count) — "fast" mirrors what
+    `pytest -m "not slow and not integration"` actually selects.
+    """
     test_dir = PROJECT_ROOT / "tests"
     if not test_dir.exists():
-        return 0
-    return sum(
-        f.read_text().count("\ndef test_")
-        for f in test_dir.glob("test_*.py")
-    )
+        return 0, 0
+
+    total = 0
+    fast = 0
+    for f in test_dir.glob("test_*.py"):
+        try:
+            tree = ast.parse(f.read_text())
+        except SyntaxError:
+            continue
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                class_marked = _decorators_mark_slow_or_integration(node.decorator_list)
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name.startswith("test_"):
+                        total += 1
+                        if not class_marked and not _decorators_mark_slow_or_integration(item.decorator_list):
+                            fast += 1
+            elif isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+                total += 1
+                if not _decorators_mark_slow_or_integration(node.decorator_list):
+                    fast += 1
+    return fast, total
 
 
 def plotly_fig_base() -> dict:
@@ -575,8 +714,8 @@ if "Overview" in page:
     # Load data once at the top of the page — used by both cascade diagram and metrics row
     cache = load_cache()
     reports = load_eval_reports()
-    kb_chunks = count_kb_chunks()
-    n_tests = count_tests()
+    kb_chunks, kb_filename = count_kb_chunks()
+    n_tests_fast, n_tests_total = count_tests()
 
     # ── Centered title ────────────────────────────────────────────────
     st.markdown(
@@ -587,6 +726,27 @@ if "Overview" in page:
         "<hr>",
         unsafe_allow_html=True,
     )
+
+    # ── Warning: indexes stale relative to configured KB ────────────────
+    _mismatch = kb_index_mismatch()
+    if _mismatch is not None:
+        if _mismatch["method"] == "manifest":
+            st.warning(
+                f"⚠️ Indexes were built from a different KB than the one configured. "
+                f"Run: `uv run python scripts/build_index.py`\n\n"
+                f"Index was built from **{_mismatch['index_kb']}** "
+                f"({_mismatch['index_docs']} docs, built {_mismatch['built_at']}) — "
+                f"configured KB is **{_mismatch['configured_kb']}** "
+                f"({_mismatch['configured_docs']:,} docs)."
+            )
+        else:
+            st.warning(
+                f"⚠️ Indexes were built from a different KB than the one configured "
+                f"(doc-count check only — no manifest.json found; rebuild to get a "
+                f"reliable check). Run: `uv run python scripts/build_index.py`\n\n"
+                f"Index contains **{_mismatch['index_docs']:,}** docs — configured KB "
+                f"(`{_mismatch['configured_kb']}`) has **{_mismatch['configured_docs']:,}**."
+            )
 
     # ── Hero: The Problem ──────────────────────────────────────────────
     st.markdown(
@@ -651,15 +811,17 @@ if "Overview" in page:
 
     retrieval_p50_label = f"{best_p50*1000:.0f} ms" if best_p50 else "—"
     kb_label = f"{kb_chunks:,}" if kb_chunks else "—"
-    test_label = str(n_tests) if n_tests else "—"
+    kb_sub = f"{kb_filename} · {kb_chunks:,} docs" if kb_chunks else kb_filename
+    test_label = str(n_tests_fast) if n_tests_total else "—"
+    test_sub = f"{n_tests_fast} fast · {n_tests_total} total" if n_tests_total else "Fast suite, no regressions"
 
     st.markdown(
         "<div class='metric-row'>"
         + metric_card("Best BERTScore", f"{best_bs:.3f}" if best_bs else "—", "On 20 held-out queries")
         + metric_card("Cache Entries", str(len(cache)), "Hand-curated Q&A pairs")
         + metric_card("Retrieval p50", retrieval_p50_label, "Embed + rerank latency")
-        + metric_card("Tests Passing", test_label, "Fast suite, no regressions")
-        + metric_card("KB Chunks", kb_label, "From live 3GPP specs")
+        + metric_card("Fast Suite Tests", test_label, test_sub)
+        + metric_card("KB Chunks", kb_label, kb_sub)
         + "</div>",
         unsafe_allow_html=True,
     )
@@ -1197,7 +1359,7 @@ elif "Query Log" in page:
             </div>
             <div style="font-size:0.85rem; color:#475569; max-width:400px; margin:0 auto;">
                 Run some queries in the <strong style="color:#38bdf8">Live Query</strong> tab.
-                Each query is automatically appended to <code>logs/query_metrics.jsonl</code>.
+                Each query is automatically appended to <code>outputs/query_metrics.jsonl</code>.
             </div>
         </div>
         """, unsafe_allow_html=True)

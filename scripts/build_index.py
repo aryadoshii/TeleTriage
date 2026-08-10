@@ -20,9 +20,11 @@ Flags:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
@@ -39,6 +41,8 @@ from backend.retrieval.embedder import Embedder
 app = typer.Typer(add_completion=False)
 console = Console()
 
+MANIFEST_HASH_BYTES = 1_000_000  # hash only the first 1 MB — cheap change-detector
+
 
 def load_jsonl(path: Path) -> list[dict]:
     docs = []
@@ -48,6 +52,21 @@ def load_jsonl(path: Path) -> list[dict]:
             if line:
                 docs.append(json.loads(line))
     return docs
+
+
+def _sha256_prefix(path: Path, n_bytes: int = MANIFEST_HASH_BYTES) -> str:
+    """SHA-256 over just the first n_bytes of a file.
+
+    Hashing all 7,181 KB entries on every build is unnecessary for what
+    this is used for (detecting "did someone swap the KB file under the
+    index's feet") — the first megabyte changes if the file's content
+    changes for any of the ways this repo actually swaps KBs (different
+    file entirely, regenerated pipeline output, edited seed doc).
+    """
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        h.update(f.read(n_bytes))
+    return h.hexdigest()
 
 
 @app.command()
@@ -105,13 +124,35 @@ def main(
     if not quiet:
         console.print(f"  Saved → {index_dir}/faiss.index  ({dense_ms:.0f} ms)\n")
 
-    # ── 4. Summary ────────────────────────────────────────────────────────
+    # ── 4. Write manifest ─────────────────────────────────────────────────
+    # Records which KB file these indexes actually came from, so anything
+    # loading the index later (RetrievalTier, `teletriage info`, the
+    # dashboard) can detect a stale/mismatched build instead of silently
+    # searching the wrong corpus.
+    if not quiet:
+        console.print("Writing manifest…")
+    manifest = {
+        "kb_path": str(kb_path.resolve()),
+        "kb_filename": kb_path.name,
+        "n_docs": len(docs),
+        "embedder_model": embedder_model,
+        "built_at": datetime.now(timezone.utc).isoformat(),
+        "kb_sha256": _sha256_prefix(kb_path),
+    }
+    manifest_path = index_dir / "manifest.json"
+    with manifest_path.open("w") as f:
+        json.dump(manifest, f, indent=2)
+    if not quiet:
+        console.print(f"  Saved → {manifest_path}\n")
+
+    # ── 5. Summary ────────────────────────────────────────────────────────
     if not quiet:
         console.print("[green]✓ Index build complete.[/green]")
-        console.print(f"  {len(docs)} documents indexed.")
-        console.print(f"  BM25:  {bm25_path}")
-        console.print(f"  FAISS: {index_dir / 'faiss.index'}")
-        console.print(f"  Docs:  {index_dir / 'faiss_docs.json'}")
+        console.print(f"  {len(docs)} documents indexed from {kb_path.name}.")
+        console.print(f"  BM25:     {bm25_path}")
+        console.print(f"  FAISS:    {index_dir / 'faiss.index'}")
+        console.print(f"  Docs:     {index_dir / 'faiss_docs.json'}")
+        console.print(f"  Manifest: {manifest_path}")
         console.print()
         console.print("Run queries with:")
         console.print("  [bold]uv run teletriage ask \"intermittent packet loss on LTE\"[/bold]")

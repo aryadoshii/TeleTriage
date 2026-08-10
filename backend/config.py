@@ -30,6 +30,12 @@ class AppConfig(BaseModel):
 class PathsConfig(BaseModel):
     cache_file: Path
     knowledge_base: Path
+    # Named references to each candidate KB, for tooling/UI that wants to
+    # label "which corpus is this" without guessing from a bare filename.
+    # Optional so configs written before these fields existed still load.
+    knowledge_base_sample: Path | None = None
+    knowledge_base_real: Path | None = None
+    knowledge_base_synth: Path | None = None
     faiss_index_dir: Path
     log_dir: Path
 

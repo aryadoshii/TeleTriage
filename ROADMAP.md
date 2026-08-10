@@ -1,6 +1,6 @@
 # Rebuild Roadmap
 
-Detailed plan for Phases 2-7. Each phase lists **what to build**, **concepts to learn**, and **free resources**. Use Claude Code in VS Code to scaffold each phase — the interfaces are pre-declared in the tier stubs.
+Detailed plan for Phases 2-7. Each phase lists **what to build**, **concepts to learn**, and **free resources**. 
 
 ---
 

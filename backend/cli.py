@@ -15,6 +15,7 @@ from rich.table import Table
 from backend.config import get_config
 from backend.observability import setup_logging
 from backend.router import Router
+from backend.tiers.retrieval_tier import load_index_manifest
 from backend.types import Query
 
 app = typer.Typer(help="TeleTriage: hierarchical telecom fault triage", add_completion=False)
@@ -65,6 +66,28 @@ def info() -> None:
                   f"min_conf={cfg.cache_tier.min_confidence})")
     console.print(f"[bold]Retrieval enabled:[/] {cfg.retrieval_tier.enabled} "
                   f"(embedder={cfg.retrieval_tier.embedder_model})")
+
+    manifest = load_index_manifest(cfg.resolve_path(cfg.paths.faiss_index_dir))
+    configured_kb = cfg.resolve_path(cfg.paths.knowledge_base)
+    if manifest is None:
+        console.print(
+            "[yellow]  Indexes:[/] no manifest.json found — either indexes "
+            "aren't built yet, or they predate this feature. Run: "
+            "[bold]uv run python scripts/build_index.py[/bold]"
+        )
+    else:
+        console.print(
+            f"[bold]  Indexes built from:[/] {manifest.get('kb_filename', '?')} "
+            f"({manifest.get('n_docs', '?')} docs) "
+            f"at {manifest.get('built_at', '?')}"
+        )
+        if manifest.get("kb_filename") != configured_kb.name:
+            console.print(
+                f"[yellow]  ⚠ Configured KB is '{configured_kb.name}' but indexes "
+                f"were built from '{manifest.get('kb_filename')}' — stale. Run: "
+                f"[bold]uv run python scripts/build_index.py[/bold][/yellow]"
+            )
+
     console.print(f"[bold]Generative enabled:[/] {cfg.generative_tier.enabled} "
                   f"(backend={cfg.generative_tier.backend}, "
                   f"model={cfg.generative_tier.groq_model})")

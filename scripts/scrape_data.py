@@ -336,6 +336,12 @@ def _is_quality_chunk(text: str, min_chars: int) -> bool:
     - Mostly punctuation / dots (leftover ToC with dot leaders)
     - Mostly digits (page numbers, figure numbers)
     - Table-of-contents lines: 'Section title  142' (text then bare number)
+
+    This filter only screens for PROSE DENSITY — it happily passes
+    well-formed prose that is administrative rather than operational
+    (title page, foreword, scope, references, copyright notice). See
+    _find_body_start_index() / _is_references_dominated() /
+    _is_boilerplate() below for the filters that catch those.
     """
     import re as _re
     stripped = text.strip()
@@ -357,6 +363,161 @@ def _is_quality_chunk(text: str, min_chars: int) -> bool:
         if toc_lines / len(lines) > 0.40:
             return False
     return True
+
+
+# ─── Front-matter filter ───────────────────────────────────────────────────
+#
+# The density filter above passes the title page, table of contents,
+# "1 Scope", "2 References", and "3 Definitions, symbols and abbreviations"
+# wholesale — they're well-formed prose, just not operational content. A
+# probe run confirmed this: the four worst synthetic Q&A pairs it produced
+# all came from these clauses (a release-number question, a "where do I
+# get the spec" question, two answers whose entire substance was a
+# cross-reference to another clause).
+#
+# DISCOVERY 1 (verified against database/real_kb.jsonl before writing
+# this): 3GPP DOCX->text extraction collapses the tab stop between a
+# clause number and its title, so BOTH table-of-contents rows AND real
+# body headings read identically as e.g. "4.1Functional Split" — no
+# space. The only reliable discriminator is what follows: ToC rows
+# additionally collapse the tab-leader to the page number, so they end in
+# a bare 1-4 digit page number ("4.1Functional Split34"); real heading
+# paragraphs don't.
+#
+# DISCOVERY 2 (found by testing the first version of this filter against
+# the real corpus — the naive "stop at the first depth>=2 heading" rule
+# lands on the "3.1Definitions" HEADING ITSELF, which starts clause 3's
+# body, not clause 4's. That kept all of clause 3's actual glossary
+# content (chunks like "A2X communication: A communication to
+# support..."), directly contradicting "drop everything up to and
+# including 3 Definitions". Fix: find the clause that contains the first
+# depth>=2 heading (empirically always "3", i.e. Definitions), then keep
+# scanning until a heading with a DIFFERENT top-level clause number shows
+# up (empirically "4") — THAT'S the real body boundary. This still
+# doesn't hardcode "3" or "4" anywhere, so it generalises to specs whose
+# clause 3 is unusually long or short.
+#
+# DISCOVERY 3: abbreviation-list entries in this corpus lose their
+# separator the exact same way clause headings do ("5GC" + tab + "5G Core
+# Network" -> "5GC5G Core Network"), and plenty of telecom abbreviations
+# start with digits (5GC, 3GPP2, 2G, 4G, 1xRTT...). "5GC5G Core Network"
+# matched an early version of this filter's "any depth" heading check as
+# top-level clause "5" and wrongly signalled the clause-4 transition from
+# inside clause 3's own abbreviation list. Fix: require depth>=2 (a real
+# dot-separated sub-clause number, "4.1") for BOTH the anchor heading and
+# the transition heading, not just the anchor. A digit-led acronym is
+# never followed by ".digit" — 3GPP body text has no "5G.1SomethingText"
+# — so requiring that dot eliminates the entire class of false positive
+# instead of chasing individual acronyms.
+#
+# Verified end-to-end for all 5 specs in this corpus (see the dry-run
+# used to calibrate this filter) — each one's transition chunk is real
+# clause-4-or-later prose, not glossary content.
+
+_HEADING_DEPTH2_RE = re.compile(r"^(\d+)((?:\.\d+)+)([A-Z].*)$")
+_TRAILING_PAGE_NUM_RE = re.compile(r"\d{1,4}$")
+
+
+def _heading_clause_depth2(para: str) -> int | None:
+    """
+    If `para` looks like a genuine depth->=2 numbered clause heading
+    ("4.1Functional Split" — requires at least one dot-separated sub-
+    number, which rules out digit-led acronyms like "5GC" or "3GPP2"),
+    return its top-level clause number (e.g. 4). Otherwise None.
+
+    Excludes:
+      - table-of-contents rows: same squished shape, but the tab-leader
+        to the page number is ALSO collapsed, so they end in a bare
+        1-4 digit page number ("4.1Functional Split34") that a real
+        heading paragraph's title text doesn't have.
+      - glossary/definition entries ("Split bearer: in dual
+        connectivity..."): these have a colon early in the paragraph;
+        headings don't.
+      - anything that isn't short (a heading is a title, not a sentence).
+    """
+    para = para.strip()
+    if not (4 <= len(para) <= 80) or ":" in para[:50]:
+        return None
+    m = _HEADING_DEPTH2_RE.match(para)
+    if not m:
+        return None
+    if _TRAILING_PAGE_NUM_RE.search(m.group(3)):
+        return None  # ToC row
+    return int(m.group(1))
+
+
+def _find_body_start_index(chunks: list[str]) -> int:
+    """
+    Return the index (into `chunks`, in document order) of the first chunk
+    that belongs to the clause AFTER the one containing the first
+    depth->=2 heading — i.e. everything through the end of clause 3
+    (Definitions, symbols and abbreviations) is front matter; clause 4
+    onward is body. Two passes in one loop: the first depth>=2 heading
+    found sets the "anchor" clause number (empirically always clause 3);
+    the next depth>=2 heading whose top-level number DIFFERS from the
+    anchor marks the real body boundary (empirically clause 4). Stopping
+    at the anchor itself (a simpler, first-draft version of this filter)
+    is wrong — it keeps all of clause 3's own glossary content, which
+    directly contradicts "drop everything up to and including 3
+    Definitions".
+
+    This doesn't hardcode "3" or "4" anywhere, so it generalises to specs
+    whose clause 3 is unusually long or short.
+
+    Returns 0 (nothing dropped) if no such transition is found — fails
+    safe rather than dropping the whole document.
+    """
+    anchor_clause: int | None = None
+    for i, chunk in enumerate(chunks):
+        for para in chunk.split("\n\n"):
+            top = _heading_clause_depth2(para)
+            if top is None:
+                continue
+            if anchor_clause is None:
+                anchor_clause = top
+            elif top != anchor_clause:
+                return i
+    return 0
+
+
+# ─── Reference-list filter ──────────────────────────────────────────────────
+
+_REF_LINE_RE = re.compile(r"^\[\d+\]")
+_REF_TS_RE = re.compile(r"3GPP TS \d\d\.\d\d\d")
+
+
+def _is_references_dominated(text: str) -> bool:
+    """
+    True if more than 40% of a chunk's lines look like reference-list
+    entries — "[12]" citation markers or bare "3GPP TS NN.NNN" pointers.
+    Independent of chunk position: catches clause 2 (References) content
+    even where the front-matter position filter alone wouldn't (e.g. a
+    references list re-appearing in an annex bibliography).
+    """
+    lines = [l for l in text.splitlines() if l.strip()]
+    if not lines:
+        return False
+    ref_lines = sum(
+        1 for l in lines
+        if _REF_LINE_RE.match(l.strip()) or _REF_TS_RE.search(l)
+    )
+    return ref_lines / len(lines) > 0.40
+
+
+# ─── Boilerplate filter ─────────────────────────────────────────────────────
+
+_BOILERPLATE_MARKERS = (
+    "All rights reserved",
+    "Organizational Partners",
+    "Postal address",
+    "Internet http://",
+    "shall not be construed",
+)
+
+
+def _is_boilerplate(text: str) -> bool:
+    """True if the chunk contains 3GPP/ETSI copyright or legal front-matter text."""
+    return any(marker in text for marker in _BOILERPLATE_MARKERS)
 
 
 # ─── MinHash deduplication ────────────────────────────────────────────────────
@@ -497,9 +658,40 @@ def main(
         # ── 3. Chunk ──────────────────────────────────────────────────
         raw_chunks = splitter.split(cleaned)
         before_filter = len(raw_chunks)
-        quality_chunks = [c for c in raw_chunks if _is_quality_chunk(c, min_chunk_chars)]
+
+        # Stage 1: prose-density filter (existing) — screens ToC dot
+        # leaders, digit-heavy tables, bare-page-number lines. Well-formed
+        # front matter (title page, Scope, References, Definitions) passes
+        # this stage untouched.
+        density_pass = [
+            (i, c) for i, c in enumerate(raw_chunks) if _is_quality_chunk(c, min_chunk_chars)
+        ]
+
+        # Stage 2: front-matter position filter — drop everything before
+        # clause 4 (title page, ToC, Scope, References, Definitions).
+        body_start_idx = _find_body_start_index(raw_chunks)
+        front_matter_dropped = sum(1 for i, _ in density_pass if i < body_start_idx)
+        after_front_matter = [(i, c) for i, c in density_pass if i >= body_start_idx]
+
+        # Stage 3: reference-list-dominated chunks (independent of position).
+        references_dropped = sum(1 for _, c in after_front_matter if _is_references_dominated(c))
+        after_references = [
+            (i, c) for i, c in after_front_matter if not _is_references_dominated(c)
+        ]
+
+        # Stage 4: copyright / legal boilerplate.
+        boilerplate_dropped = sum(1 for _, c in after_references if _is_boilerplate(c))
+        quality_chunks = [c for _, c in after_references if not _is_boilerplate(c)]
+
         console.print(
-            f"  Chunks: {before_filter} raw → {len(quality_chunks)} after quality filter"
+            f"  Chunks: {before_filter} raw → {len(density_pass)} after density filter "
+            f"→ {len(quality_chunks)} after front-matter/references/boilerplate filters"
+        )
+        console.print(
+            f"    dropped — density: {before_filter - len(density_pass)}, "
+            f"front-matter: {front_matter_dropped}, "
+            f"references-list: {references_dropped}, "
+            f"boilerplate: {boilerplate_dropped}"
         )
 
         source_label = f"3GPP TS {spec_id}"
@@ -522,6 +714,10 @@ def main(
             "spec": spec_id,
             "chars": len(cleaned),
             "raw_chunks": before_filter,
+            "density_dropped": before_filter - len(density_pass),
+            "front_matter_dropped": front_matter_dropped,
+            "references_dropped": references_dropped,
+            "boilerplate_dropped": boilerplate_dropped,
             "quality_chunks": len(quality_chunks),
         })
 
@@ -583,16 +779,27 @@ def main(
     tbl.add_column("Spec", style="cyan")
     tbl.add_column("Chars", justify="right")
     tbl.add_column("Raw chunks", justify="right")
-    tbl.add_column("Quality", justify="right")
+    tbl.add_column("Dropped: density", justify="right")
+    tbl.add_column("Dropped: front-matter", justify="right")
+    tbl.add_column("Dropped: refs-list", justify="right")
+    tbl.add_column("Dropped: boilerplate", justify="right")
+    tbl.add_column("Quality", justify="right", style="bold green")
 
     for stat in per_spec_stats:
         if "error" in stat:
-            tbl.add_row(stat["spec"], "—", "—", f"[red]error: {stat['error']}[/red]")
+            tbl.add_row(
+                stat["spec"], "—", "—", "—", "—", "—", "—",
+                f"[red]error: {stat['error']}[/red]",
+            )
         else:
             tbl.add_row(
                 stat["spec"],
                 f"{stat['chars']:,}",
                 str(stat["raw_chunks"]),
+                str(stat["density_dropped"]),
+                str(stat["front_matter_dropped"]),
+                str(stat["references_dropped"]),
+                str(stat["boilerplate_dropped"]),
                 str(stat["quality_chunks"]),
             )
     console.print(tbl)

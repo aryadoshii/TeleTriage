@@ -178,6 +178,42 @@ Incoming fault description
 
 ---
 
+# The full flow in one picture 
+User types a query
+        │
+        ▼
+backend/cli.py  OR  scripts/run_query.py  OR  frontend/dashboard.py
+        │
+        ▼
+backend/router.py  →  Router.route(query)
+        │
+        ├──▶ backend/tiers/cache_tier.py
+        │         reads: database/sample_cache.json
+        │         uses:  rapidfuzz
+        │         returns TierResult (confidence 0.85–1.0 if hit, 0.0 if miss)
+        │
+        ├──▶ backend/tiers/retrieval_tier.py
+        │         uses:  backend/retrieval/bm25.py
+        │                backend/retrieval/dense.py  ←  backend/retrieval/embedder.py
+        │                backend/retrieval/hybrid.py
+        │                backend/retrieval/reranker.py
+        │         reads: database/indexes/bm25.pkl
+        │                database/indexes/faiss.index + faiss_docs.json
+        │         returns TierResult (confidence from sigmoid(logit), or 0.0 if below gate)
+        │
+        └──▶ backend/tiers/generative_tier.py
+                  uses:  backend/generation/llm_client.py
+                         (GroqClient → GeminiClient → LocalQwenClient)
+                  returns TierResult (hardcoded confidence 0.60, always answered=True)
+        │
+        ▼
+Response(answer, answered_by, confidence, total_latency, tier_trace)
+        │
+        ▼
+Printed to terminal / shown in dashboard
+
+---
+
 ## 🧱 Component Reference
 
 | # | Component | Technology | Role |
@@ -483,13 +519,6 @@ Harmless warning from `sentence-transformers` when loading BGE models. Does not 
 - ✅ **Phase 5** — real data: 5 live 3GPP specs scraped, chunked, deduped → 7,181 KB entries + synth QA pipeline
 - ✅ **Phase 6** — adaptive cache: 3-gate quality promoter, batch CLI, 27 tests
 - ✅ **Phase 7** — observability dashboard: glassmorphism Streamlit UI, 5 views, auto-logging
-
-**Planned:**
-- 🔲 Full synth QA run at scale (~14k Q&A pairs); rebuild indexes; validate retrieval BERTScore > generative
-- 🔲 Cisco/Nokia troubleshooting guides added to knowledge base
-- 🔲 REST API wrapper for integration with ticketing systems (Jira, ServiceNow)
-- 🔲 Model quantisation (INT8) for edge deployment
-- 🔲 Reinforcement learning for adaptive threshold tuning
 
 ---
 

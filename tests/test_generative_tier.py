@@ -404,7 +404,7 @@ class TestGenerativeTier:
         )
 
         with patch(
-            "teletriage.tiers.generative_tier.make_llm_client",
+            "backend.tiers.generative_tier.make_llm_client",
             return_value=mock_client,
         ):
             tier = GenerativeTier()

@@ -1,5 +1,11 @@
 [server]
-# Prevents Streamlit's watcher from introspecting transformers submodules,
-# which triggers dozens of ModuleNotFoundError: No module named 'torchvision'
-# warnings at startup (harmless but noisy).
-fileWatcherType = "poll"
+# "poll" still uses Streamlit's LocalSourcesWatcher, which walks every
+# imported module and touches __path__. transformers uses lazy module
+# aliases, so touching __path__ triggers real imports of ~60 vision
+# image-processing submodules that all require torchvision. torchvision
+# isn't installed (and shouldn't be -- this project never touches images),
+# so each one raises ModuleNotFoundError and Streamlit logs a full
+# traceback. Only "none" disables the module walk entirely.
+# Tradeoff: no auto-rerun on file edits -- press R in the browser or
+# restart the process after editing dashboard.py.
+fileWatcherType = "none"

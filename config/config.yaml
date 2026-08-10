@@ -9,7 +9,10 @@ app:
 # Paths (relative to project root)
 paths:
   cache_file: database/sample_cache.json
-  knowledge_base: database/sample_kb.jsonl
+  knowledge_base: database/synth_kb.jsonl        # ACTIVE — what gets indexed
+  knowledge_base_sample: database/sample_kb.jsonl  # 30 curated seed docs
+  knowledge_base_real: database/real_kb.jsonl      # 7,181 raw 3GPP chunks
+  knowledge_base_synth: database/synth_kb.jsonl    # synth Q&A over chunks
   faiss_index_dir: database/indexes/
   log_dir: outputs/
 
