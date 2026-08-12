@@ -21,6 +21,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] ))
 
 from backend.config import get_config
+from backend.tiers.retrieval_tier import load_index_manifest
 
 # ─── Page config ──────────────────────────────────────────────────────
 st.set_page_config(
@@ -43,7 +44,7 @@ st.markdown("""
 html, body, .stApp {
     background: #050d1a !important;
     font-family: 'Space Grotesk', sans-serif !important;
-    color: #e2e8f0 !important;
+    color: #F5F5DC !important;
 }
 
 /* ── Animated background mesh ── */
@@ -53,9 +54,9 @@ html, body, .stApp {
     inset: 0;
     z-index: 0;
     background:
-        radial-gradient(ellipse 80% 50% at 10% 20%, rgba(14,165,233,0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 90% 80%, rgba(99,102,241,0.10) 0%, transparent 60%),
-        radial-gradient(ellipse 50% 60% at 50% 50%, rgba(6,182,212,0.05) 0%, transparent 70%);
+        radial-gradient(ellipse 80% 50% at 10% 20%, rgba(130,200,229,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 90% 80%, rgba(147,197,114,0.10) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 60% at 50% 50%, rgba(130,200,229,0.05) 0%, transparent 70%);
     pointer-events: none;
 }
 
@@ -69,7 +70,7 @@ section[data-testid="stSidebar"][aria-expanded="true"] {
     background: rgba(8, 20, 40, 0.92) !important;
     backdrop-filter: blur(24px) !important;
     -webkit-backdrop-filter: blur(24px) !important;
-    border-right: 1px solid rgba(14,165,233,0.15) !important;
+    border-right: 1px solid rgba(130,200,229,0.15) !important;
     padding-top: 0 !important;
     visibility: visible !important;
     display: block !important;
@@ -91,7 +92,7 @@ section[data-testid="stSidebar"] > div {
     background: rgba(14, 30, 60, 0.55);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(14,165,233,0.18);
+    border: 1px solid rgba(130,200,229,0.18);
     border-radius: 16px;
     padding: 1.5rem 2rem;
     margin-bottom: 1.25rem;
@@ -100,7 +101,7 @@ section[data-testid="stSidebar"] > div {
 }
 
 .glass-card:hover {
-    border-color: rgba(14,165,233,0.35);
+    border-color: rgba(130,200,229,0.35);
 }
 
 /* ── Metric cards ── */
@@ -114,7 +115,7 @@ section[data-testid="stSidebar"] > div {
     flex: 1;
     background: rgba(14, 30, 60, 0.6);
     backdrop-filter: blur(20px);
-    border: 1px solid rgba(14,165,233,0.18);
+    border: 1px solid rgba(130,200,229,0.18);
     border-radius: 14px;
     padding: 1.25rem 1.5rem;
     box-shadow: 0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
@@ -127,7 +128,7 @@ section[data-testid="stSidebar"] > div {
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 2px;
-    background: linear-gradient(90deg, transparent, rgba(14,165,233,0.6), transparent);
+    background: linear-gradient(90deg, transparent, rgba(130,200,229,0.6), transparent);
 }
 
 .metric-label {
@@ -165,8 +166,8 @@ section[data-testid="stSidebar"] > div {
     font-family: 'JetBrains Mono', monospace;
 }
 
-.tier-cache    { background: rgba(34,197,94,0.18);  color: #4ade80; border: 1px solid rgba(34,197,94,0.35); }
-.tier-retrieval{ background: rgba(14,165,233,0.18); color: #38bdf8; border: 1px solid rgba(14,165,233,0.35); }
+.tier-cache    { background: rgba(130,200,229,0.18);  color: #82C8E5; border: 1px solid rgba(130,200,229,0.35); }
+.tier-retrieval{ background: rgba(147,197,114,0.18); color: #93C572; border: 1px solid rgba(147,197,114,0.35); }
 .tier-generative{background: rgba(251,146,60,0.18); color: #fb923c; border: 1px solid rgba(251,146,60,0.35); }
 .tier-none     { background: rgba(239,68,68,0.18);  color: #f87171; border: 1px solid rgba(239,68,68,0.35); }
 
@@ -182,8 +183,8 @@ section[data-testid="stSidebar"] > div {
     font-family: 'Space Grotesk', sans-serif;
 }
 
-.answer-box-cache     { border-color: #4ade80; }
-.answer-box-retrieval { border-color: #38bdf8; }
+.answer-box-cache     { border-color: #82C8E5; }
+.answer-box-retrieval { border-color: #93C572; }
 .answer-box-generative{ border-color: #fb923c; }
 .answer-box-none      { border-color: #f87171; }
 
@@ -216,7 +217,7 @@ section[data-testid="stSidebar"] > div {
 /* ── Stat highlight ── */
 .highlight-number {
     font-family: 'JetBrains Mono', monospace;
-    color: #38bdf8;
+    color: #82C8E5;
     font-weight: 700;
 }
 
@@ -231,7 +232,7 @@ section[data-testid="stSidebar"] > div {
 
 .arch-tier {
     background: rgba(14, 30, 60, 0.8);
-    border: 1px solid rgba(14,165,233,0.25);
+    border: 1px solid rgba(130,200,229,0.25);
     border-radius: 10px;
     padding: 0.75rem 1.25rem;
     text-align: center;
@@ -241,12 +242,12 @@ section[data-testid="stSidebar"] > div {
 .arch-tier-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; }
 .arch-tier-name  { font-size: 1rem; font-weight: 700; margin: 0.2rem 0; }
 .arch-tier-speed { font-size: 0.75rem; font-family: 'JetBrains Mono', monospace; }
-.arch-arrow      { color: #38bdf8; font-size: 1.25rem; }
+.arch-arrow      { color: #82C8E5; font-size: 1.25rem; }
 
 /* ── Step cards (onboarding) ── */
 .step-card {
     background: rgba(14, 30, 60, 0.55);
-    border: 1px solid rgba(14,165,233,0.18);
+    border: 1px solid rgba(130,200,229,0.18);
     border-radius: 14px;
     padding: 1.25rem;
     margin-bottom: 0.75rem;
@@ -256,7 +257,7 @@ section[data-testid="stSidebar"] > div {
 }
 
 .step-number {
-    background: linear-gradient(135deg, #0ea5e9, #6366f1);
+    background: linear-gradient(135deg, #82C8E5, #93C572);
     border-radius: 50%;
     width: 32px;
     height: 32px;
@@ -274,11 +275,11 @@ section[data-testid="stSidebar"] > div {
 
 /* ── Streamlit overrides ── */
 div[data-testid="stMetricValue"] { font-family: 'JetBrains Mono', monospace !important; }
-div[data-testid="stMarkdownContainer"] p { color: #cbd5e1 !important; }
+div[data-testid="stMarkdownContainer"] p { color: #F5F5DC !important; }
 
 .stTextArea textarea {
     background: rgba(8, 20, 40, 0.7) !important;
-    border: 1px solid rgba(14,165,233,0.3) !important;
+    border: 1px solid rgba(130,200,229,0.3) !important;
     border-radius: 10px !important;
     color: #e2e8f0 !important;
     font-family: 'Space Grotesk', sans-serif !important;
@@ -286,12 +287,12 @@ div[data-testid="stMarkdownContainer"] p { color: #cbd5e1 !important; }
 }
 
 .stTextArea textarea:focus {
-    border-color: rgba(14,165,233,0.7) !important;
-    box-shadow: 0 0 0 3px rgba(14,165,233,0.15) !important;
+    border-color: rgba(130,200,229,0.7) !important;
+    box-shadow: 0 0 0 3px rgba(130,200,229,0.15) !important;
 }
 
 .stButton > button {
-    background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%) !important;
+    background: linear-gradient(135deg, #82C8E5 0%, #93C572 100%) !important;
     color: #fff !important;
     border: none !important;
     border-radius: 10px !important;
@@ -301,24 +302,24 @@ div[data-testid="stMarkdownContainer"] p { color: #cbd5e1 !important; }
     padding: 0.6rem 2rem !important;
     letter-spacing: 0.03em !important;
     transition: all 0.2s !important;
-    box-shadow: 0 4px 15px rgba(14,165,233,0.35) !important;
+    box-shadow: 0 4px 15px rgba(130,200,229,0.35) !important;
 }
 
 .stButton > button:hover {
     transform: translateY(-1px) !important;
-    box-shadow: 0 6px 20px rgba(14,165,233,0.5) !important;
+    box-shadow: 0 6px 20px rgba(130,200,229,0.5) !important;
 }
 
 .stSelectbox > div > div {
     background: rgba(8, 20, 40, 0.7) !important;
-    border: 1px solid rgba(14,165,233,0.3) !important;
+    border: 1px solid rgba(130,200,229,0.3) !important;
     border-radius: 10px !important;
     color: #e2e8f0 !important;
 }
 
 div[data-testid="stExpander"] {
     background: rgba(14, 30, 60, 0.4) !important;
-    border: 1px solid rgba(14,165,233,0.15) !important;
+    border: 1px solid rgba(130,200,229,0.15) !important;
     border-radius: 10px !important;
 }
 
@@ -342,23 +343,23 @@ div[data-testid="stRadio"] label {
 }
 
 div[data-testid="stRadio"] label:hover {
-    background: rgba(14,165,233,0.12) !important;
+    background: rgba(130,200,229,0.12) !important;
     color: #e2e8f0 !important;
 }
 
 /* ── Divider ── */
 hr {
     border: none !important;
-    border-top: 1px solid rgba(14,165,233,0.12) !important;
+    border-top: 1px solid rgba(130,200,229,0.12) !important;
     margin: 1.5rem 0 !important;
 }
 
 /* ── Alert / info boxes ── */
 div[data-testid="stInfo"] {
-    background: rgba(14,165,233,0.1) !important;
-    border: 1px solid rgba(14,165,233,0.25) !important;
+    background: rgba(130,200,229,0.1) !important;
+    border: 1px solid rgba(130,200,229,0.25) !important;
     border-radius: 10px !important;
-    color: #bae6fd !important;
+    color: #cceaf4 !important;
 }
 
 div[data-testid="stWarning"] {
@@ -370,8 +371,8 @@ div[data-testid="stWarning"] {
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(14,165,233,0.3); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(14,165,233,0.5); }
+::-webkit-scrollbar-thumb { background: rgba(130,200,229,0.3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(130,200,229,0.5); }
 
 /* ── Hide streamlit branding, keep sidebar toggle ── */
 #MainMenu, footer { visibility: hidden !important; }
@@ -403,8 +404,8 @@ header[data-testid="stHeader"] > div:not(:has([data-testid="stSidebarCollapseBut
 # ─── Helpers ──────────────────────────────────────────────────────────
 
 TIER_COLORS = {
-    "cache":      "#4ade80",
-    "retrieval":  "#38bdf8",
+    "cache":      "#82C8E5",
+    "retrieval":  "#93C572",
     "generative": "#fb923c",
     "none":       "#f87171",
 }
@@ -415,6 +416,59 @@ TIER_ICONS = {
     "generative": "🤖",
     "none":       "⚠️",
 }
+
+# Reference metadata about the 5 indexed 3GPP specs — spec number, title,
+# what it covers, official archive dir, and the exact version file this
+# corpus was scraped from. This is static, real-world reference data that
+# the index manifest has no way to know (it tracks the KB file/hash it
+# was built from, not per-spec provenance) — it is NOT a substitute for
+# chunk counts, which come from count_chunks_by_spec() at render time.
+# Titles verified against each spec's own title page (real_kb.jsonl,
+# chunk_index=0). Archive URLs verified live (curl, browser UA — 3GPP's
+# server 403s a bare curl UA but 200s with one) 2026-08-11. Version
+# filenames verified present in database/raw_zips/ 2026-08-11.
+SPEC_CATALOG = [
+    {
+        "spec_id": "36.300",
+        "title": "E-UTRA and E-UTRAN Overall Description (Stage 2)",
+        "covers": "The system-level map of LTE — how eNodeB, MME, S-GW, and UE fit "
+                   "together, and which protocol layer handles what.",
+        "archive_url": "https://www.3gpp.org/ftp/Specs/archive/36_series/36.300/",
+        "version_zip": "36300-j20.zip",
+    },
+    {
+        "spec_id": "36.331",
+        "title": "E-UTRA Radio Resource Control (RRC) Protocol Specification",
+        "covers": "UE-to-eNodeB signaling — connection setup, handover, measurement "
+                   "reporting, and re-establishment after radio link failure.",
+        "archive_url": "https://www.3gpp.org/ftp/Specs/archive/36_series/36.331/",
+        "version_zip": "36331-j30.zip",
+    },
+    {
+        "spec_id": "36.413",
+        "title": "E-UTRAN S1 Application Protocol (S1AP)",
+        "covers": "eNodeB-to-MME signaling — UE context setup, handover requests, "
+                   "and paging over the S1 interface.",
+        "archive_url": "https://www.3gpp.org/ftp/Specs/archive/36_series/36.413/",
+        "version_zip": "36413-j20.zip",
+    },
+    {
+        "spec_id": "24.301",
+        "title": "Non-Access-Stratum (NAS) Protocol for EPS",
+        "covers": "UE-to-core-network mobility and session management — attach, "
+                   "tracking area update, and the EMM/ESM cause codes seen in reject logs.",
+        "archive_url": "https://www.3gpp.org/ftp/Specs/archive/24_series/24.301/",
+        "version_zip": "24301-k00.zip",
+    },
+    {
+        "spec_id": "23.401",
+        "title": "GPRS Enhancements for E-UTRAN Access (EPS Architecture)",
+        "covers": "The packet-core architecture underneath LTE — bearer and GTP "
+                   "tunnel management, mobility procedures at the system level.",
+        "archive_url": "https://www.3gpp.org/ftp/Specs/archive/23_series/23.401/",
+        "version_zip": "23401-k00.zip",
+    },
+]
 
 
 def tier_badge(tier: str) -> str:
@@ -502,6 +556,32 @@ def count_kb_chunks() -> tuple[int, str]:
         return 0, p.name
     count = sum(1 for l in p.read_text().splitlines() if l.strip())
     return count, p.name
+
+
+def count_chunks_by_spec() -> dict[str, int]:
+    """
+    Per-spec_id chunk counts in the CURRENTLY BUILT index — read straight
+    from database/indexes/faiss_docs.json (the per-doc file retrieval
+    actually searches), not the configured KB file. If the index is
+    stale relative to config (see kb_index_mismatch()), this reflects
+    what's actually searchable right now, not what's merely configured.
+
+    Returns {} if no index is built yet.
+    """
+    cfg = get_config()
+    docs_path = cfg.resolve_path(cfg.paths.faiss_index_dir) / "faiss_docs.json"
+    if not docs_path.exists():
+        return {}
+    try:
+        docs = json.loads(docs_path.read_text())
+    except Exception:
+        return {}
+    counts: dict[str, int] = {}
+    for d in docs:
+        spec = d.get("spec_id")
+        if spec:
+            counts[spec] = counts.get(spec, 0) + 1
+    return counts
 
 
 def _sha256_prefix(path: Path, n_bytes: int = 1_000_000) -> str:
@@ -642,8 +722,8 @@ def plotly_fig_base() -> dict:
         plot_bgcolor="rgba(8,20,40,0.4)",
         font=dict(family="Space Grotesk, sans-serif", color="#94a3b8"),
         margin=dict(l=10, r=10, t=30, b=10),
-        xaxis=dict(gridcolor="rgba(14,165,233,0.1)", zerolinecolor="rgba(14,165,233,0.15)"),
-        yaxis=dict(gridcolor="rgba(14,165,233,0.1)", zerolinecolor="rgba(14,165,233,0.15)"),
+        xaxis=dict(gridcolor="rgba(130,200,229,0.1)", zerolinecolor="rgba(130,200,229,0.15)"),
+        yaxis=dict(gridcolor="rgba(130,200,229,0.1)", zerolinecolor="rgba(130,200,229,0.15)"),
     )
 
 
@@ -651,7 +731,7 @@ def plotly_fig_base() -> dict:
 
 with st.sidebar:
     st.markdown("""
-    <div style="padding: 1.75rem 1rem 1.25rem 1rem; border-bottom: 1px solid rgba(14,165,233,0.15); margin-bottom: 1rem;">
+    <div style="padding: 1.75rem 1rem 1.25rem 1rem; border-bottom: 1px solid rgba(130,200,229,0.15); margin-bottom: 1rem;">
         <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.4rem;">
             <span style="font-size:1.6rem;">📡</span>
             <span style="font-size:1.35rem; font-weight:700; color:#f1f5f9; letter-spacing:-0.02em;">TeleTriage</span>
@@ -670,21 +750,21 @@ with st.sidebar:
 
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
     st.markdown("""
-    <div style="padding: 1rem; margin: 0 0.25rem; background: rgba(14,165,233,0.06);
-                border: 1px solid rgba(14,165,233,0.15); border-radius: 12px;">
+    <div style="padding: 1rem; margin: 0 0.25rem; background: rgba(130,200,229,0.06);
+                border: 1px solid rgba(130,200,229,0.15); border-radius: 12px;">
         <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.1em;
                     color:#64748b; margin-bottom:0.75rem;">System Status</div>
         <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
-            <span style="width:7px; height:7px; background:#4ade80; border-radius:50%;
-                         box-shadow:0 0 6px #4ade80; display:inline-block;"></span>
+            <span style="width:7px; height:7px; background:#82C8E5; border-radius:50%;
+                         box-shadow:0 0 6px #82C8E5; display:inline-block;"></span>
             <span style="font-size:0.8rem; color:#94a3b8;">CAG Cache</span>
-            <span style="margin-left:auto; font-size:0.75rem; font-family:monospace; color:#4ade80;">~0ms</span>
+            <span style="margin-left:auto; font-size:0.75rem; font-family:monospace; color:#82C8E5;">~0ms</span>
         </div>
         <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
-            <span style="width:7px; height:7px; background:#38bdf8; border-radius:50%;
-                         box-shadow:0 0 6px #38bdf8; display:inline-block;"></span>
+            <span style="width:7px; height:7px; background:#93C572; border-radius:50%;
+                         box-shadow:0 0 6px #93C572; display:inline-block;"></span>
             <span style="font-size:0.8rem; color:#94a3b8;">RAG Retrieval</span>
-            <span style="margin-left:auto; font-size:0.75rem; font-family:monospace; color:#38bdf8;">~200ms</span>
+            <span style="margin-left:auto; font-size:0.75rem; font-family:monospace; color:#93C572;">~200ms</span>
         </div>
         <div style="display:flex; align-items:center; gap:0.5rem;">
             <span style="width:7px; height:7px; background:#fb923c; border-radius:50%;
@@ -748,57 +828,150 @@ if "Overview" in page:
                 f"(`{_mismatch['configured_kb']}`) has **{_mismatch['configured_docs']:,}**."
             )
 
-    # ── Hero: The Problem ──────────────────────────────────────────────
+    cfg = get_config()
+
+    # ── 1. THE PROBLEM ──────────────────────────────────────────────────
     st.markdown(
         "<div style='margin-bottom:2rem;'>"
-        "<div style='font-size:0.72rem;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#38bdf8;margin-bottom:0.6rem;'>The Problem</div>"
-        "<div style='font-size:2.4rem;font-weight:800;line-height:1.15;letter-spacing:-0.03em;color:#f1f5f9;margin-bottom:0.9rem;'>"
-        "Telecom faults escalate in minutes.<br>"
-        "<span style='color:#38bdf8;'>Answers shouldn&apos;t take hours.</span></div>"
-        "<div style='font-size:1rem;color:#94a3b8;max-width:720px;line-height:1.75;'>"
-        "Network operations teams debug the same faults repeatedly — packet loss, handover failures, bearer drops — "
-        "by digging through 3GPP specs, vendor docs, and tribal knowledge scattered across Confluence pages and engineers&apos; heads. "
-        "There is no single system that triages a fault description and returns a structured, sourced answer in under a second."
+        "<div style='font-size:0.72rem;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#82C8E5;margin-bottom:0.6rem;'>The Problem</div>"
+        "<div style='font-size:2.2rem;font-weight:800;line-height:1.2;letter-spacing:-0.03em;color:#f1f5f9;margin-bottom:0.9rem;'>"
+        "3GPP specs are the standards every network is built to comply with —<br>"
+        "<span style='color:#82C8E5;'>and they're nearly unsearchable.</span></div>"
+        "<div style='font-size:1rem;color:#94a3b8;max-width:760px;line-height:1.8;'>"
+        "They're distributed as Word documents running to 1,000+ pages of dense normative prose, heavily "
+        "cross-referenced, with no good search. When a network operations engineer sees an unfamiliar reject "
+        "cause in a log at 2am, finding out what it means requires grepping a 900-page document — and often "
+        "the answer lives in a <em>different</em> spec than the one naming the code. TS 36.331 alone is "
+        "<span class='highlight-number'>3.2 million</span> characters."
         "</div></div><hr>",
         unsafe_allow_html=True,
     )
 
-    # ── The Solution ──────────────────────────────────────────────────
+    # ── 2. WHAT THIS DOES ───────────────────────────────────────────────
     st.markdown("""
     <div style="margin-bottom: 1.5rem;">
         <div style="font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
-                    color: #4ade80; margin-bottom: 0.6rem;">The Solution</div>
+                    color: #82C8E5; margin-bottom: 0.6rem;">What This Does</div>
         <div style="font-size: 1.5rem; font-weight: 700; color: #f1f5f9; margin-bottom: 0.5rem; letter-spacing: -0.02em;">
-            A confidence-calibrated, three-tier cascade that answers in the right order — fast first.
+            Describe the symptom in plain language. Get an answer grounded in the actual spec text — with a citation.
         </div>
-        <div style="font-size: 0.88rem; color: #94a3b8; max-width: 720px; line-height: 1.7; margin-bottom: 1.5rem;">
-            Instead of always calling an LLM, TeleTriage tries the cheapest path first and escalates
-            only when confidence falls below an empirically measured threshold — not a guessed one.
+        <div style="font-size: 0.95rem; color: #94a3b8; max-width: 760px; line-height: 1.8; margin-bottom: 1.5rem;">
+            Type what you're seeing, the way you'd describe it to a colleague — a fault description, a reject
+            cause, a log line. TeleTriage searches the indexed specifications, finds the passages that actually
+            address it, and returns a structured answer that cites the exact spec and chunk it came from, so you
+            can go verify it yourself instead of taking a model's word for it.
+        </div>
+    </div>
+    <hr>
+    """, unsafe_allow_html=True)
+
+    # ── 3. THE CORPUS — chunk counts computed from the built index, never
+    # hardcoded; "built from"/"built at" come straight from the manifest ──
+    st.markdown("""
+    <div style="margin-bottom: 1rem;">
+        <div style="font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+                    color: #82C8E5; margin-bottom: 0.6rem;">The Corpus</div>
+        <div style="font-size: 1.5rem; font-weight: 700; color: #f1f5f9; margin-bottom: 0.5rem; letter-spacing: -0.02em;">
+            Five live 3GPP specifications, chunked and indexed.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    spec_counts = count_chunks_by_spec()
+    _manifest = load_index_manifest(cfg.resolve_path(cfg.paths.faiss_index_dir))
+    if _manifest:
+        try:
+            _built_dt = datetime.fromisoformat(_manifest.get("built_at", "").replace("Z", "+00:00"))
+            _built_at_fmt = _built_dt.strftime("%Y-%m-%d %H:%M UTC")
+        except Exception:
+            _built_at_fmt = _manifest.get("built_at") or "—"
+        _manifest_note = (
+            f"Index built from <strong style='color:#F5F5DC;'>{_manifest.get('kb_filename', '—')}</strong>"
+            f" &nbsp;·&nbsp; <span class='highlight-number'>{_manifest.get('n_docs', 0):,}</span> chunks total"
+            f" &nbsp;·&nbsp; built <strong style='color:#F5F5DC;'>{_built_at_fmt}</strong>"
+        )
+    else:
+        _manifest_note = "No index manifest found — run <code>uv run python scripts/build_index.py</code>."
+    st.markdown(f"<div style='font-size:0.82rem;color:#64748b;margin-bottom:1rem;'>{_manifest_note}</div>", unsafe_allow_html=True)
+
+    _rows_html = ""
+    for spec in SPEC_CATALOG:
+        sid = spec["spec_id"]
+        n_chunks = spec_counts.get(sid)
+        n_chunks_str = f"{n_chunks:,}" if n_chunks else "—"
+        _rows_html += (
+            "<tr style='border-bottom:1px solid rgba(255,255,255,0.06);'>"
+            "<td style='padding:0.75rem 1rem;vertical-align:top;'>"
+            f"<div style='font-weight:700;color:#F5F5DC;font-family:JetBrains Mono,monospace;font-size:0.85rem;'>TS {sid}</div>"
+            f"<div style='font-size:0.75rem;color:#64748b;margin-top:0.15rem;max-width:220px;'>{spec['title']}</div>"
+            "</td>"
+            f"<td style='padding:0.75rem 1rem;vertical-align:top;color:#94a3b8;font-size:0.82rem;max-width:340px;'>{spec['covers']}</td>"
+            f"<td style='padding:0.75rem 1rem;vertical-align:top;text-align:right;font-family:JetBrains Mono,monospace;color:#82C8E5;font-size:0.9rem;white-space:nowrap;'>{n_chunks_str}</td>"
+            "<td style='padding:0.75rem 1rem;vertical-align:top;white-space:nowrap;'>"
+            f"<a href='{spec['archive_url']}' target='_blank' rel='noopener' "
+            "style='color:#82C8E5;text-decoration:none;border-bottom:1px dotted rgba(130,200,229,0.5);font-size:0.82rem;'>3GPP archive &#8599;</a>"
+            f"<div style='font-size:0.68rem;color:#475569;margin-top:0.25rem;font-family:JetBrains Mono,monospace;'>{spec['version_zip']}</div>"
+            "</td></tr>"
+        )
+
+    st.markdown(
+        "<div class='glass-card' style='padding:0.5rem 0.5rem;'>"
+        "<table style='width:100%;border-collapse:collapse;'>"
+        "<thead><tr style='border-bottom:1px solid rgba(130,200,229,0.3);'>"
+        "<th style='text-align:left;padding:0.6rem 1rem;color:#82C8E5;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;'>Spec</th>"
+        "<th style='text-align:left;padding:0.6rem 1rem;color:#82C8E5;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;'>What it covers</th>"
+        "<th style='text-align:right;padding:0.6rem 1rem;color:#82C8E5;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;'>Chunks indexed</th>"
+        "<th style='text-align:left;padding:0.6rem 1rem;color:#82C8E5;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;'>Archive</th>"
+        "</tr></thead><tbody>"
+        + _rows_html +
+        "</tbody></table></div>"
+        "<div style='font-size:0.76rem;color:#475569;margin-top:0.75rem;line-height:1.6;'>"
+        "3GPP distributes these as a ZIP containing a single <code>.docx</code> file — not PDF. The version "
+        "filenames above are exactly what this index was built from. 3GPP revises these specifications "
+        "continuously, so re-running the scraper may fetch a newer revision than what's indexed today."
+        "</div><hr>",
+        unsafe_allow_html=True,
+    )
+
+    # ── 4. HOW IT ANSWERS ───────────────────────────────────────────────
+    st.markdown("""
+    <div style="margin-bottom: 1.5rem;">
+        <div style="font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+                    color: #82C8E5; margin-bottom: 0.6rem;">How It Answers</div>
+        <div style="font-size: 1.5rem; font-weight: 700; color: #f1f5f9; margin-bottom: 0.5rem; letter-spacing: -0.02em;">
+            A three-tier cascade — each tier only answers what it can back up.
+        </div>
+        <div style="font-size: 0.88rem; color: #94a3b8; max-width: 760px; line-height: 1.7; margin-bottom: 1.5rem;">
+            TeleTriage tries the cheapest, most verifiable path first, and escalates only when confidence falls
+            below an empirically measured threshold — not a guessed one.
         </div>
     </div>
     """, unsafe_allow_html=True)
 
     # Cascade diagram — no blank lines inside (blank lines trigger Markdown code-block mode)
     _cache_n = len(cache)
-    _kb_n = kb_chunks
+    _kb_n = sum(spec_counts.values()) if spec_counts else kb_chunks
     _kb_str = f"{_kb_n:,}" if _kb_n else "—"
-    t1 = (f"<div style='flex:1;min-width:160px;padding:1.25rem;border-right:1px solid rgba(14,165,233,0.12);'>"
-          f"<div style='font-size:0.65rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;margin-bottom:0.5rem;'>Tier 1 · ~0 ms</div>"
-          f"<div style='font-size:1.25rem;font-weight:800;color:#4ade80;margin-bottom:0.3rem;'>&#9889; Cache</div>"
-          f"<div style='font-size:0.78rem;color:#94a3b8;line-height:1.5;margin-bottom:0.75rem;'>Exact match &#8594; normalised match &#8594; fuzzy token-set match. Returns instantly from {_cache_n} hand-curated Q&amp;A pairs.</div>"
-          f"<div style='font-size:0.72rem;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:6px;padding:4px 10px;display:inline-block;color:#4ade80;'>Confidence &ge; 0.85 &#8594; stop</div></div>")
+    t1 = (f"<div style='flex:1;min-width:160px;padding:1.25rem;border-right:1px solid rgba(130,200,229,0.12);'>"
+          f"<div style='font-size:0.65rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;margin-bottom:0.5rem;'>Tier 1 · Known repeats</div>"
+          f"<div style='font-size:1.25rem;font-weight:800;color:#82C8E5;margin-bottom:0.3rem;'>&#9889; Cache</div>"
+          f"<div style='font-size:0.78rem;color:#94a3b8;line-height:1.5;margin-bottom:0.75rem;'>Exact &#8594; normalised &#8594; fuzzy match against {_cache_n} hand-curated Q&amp;A pairs. If this exact fault has been triaged before, you get the same vetted answer back — no LLM call, ~0ms.</div>"
+          f"<div style='font-size:0.72rem;background:rgba(130,200,229,0.1);border:1px solid rgba(130,200,229,0.2);border-radius:6px;padding:4px 10px;display:inline-block;color:#82C8E5;'>Confidence &ge; 0.85 &#8594; stop</div></div>")
     arr = "<div style='display:flex;align-items:center;padding:0 0.75rem;color:#334155;font-size:0.9rem;font-weight:700;'>&#8250;</div>"
-    t2 = (f"<div style='flex:1;min-width:160px;padding:1.25rem;border-right:1px solid rgba(14,165,233,0.12);'>"
-          f"<div style='font-size:0.65rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;margin-bottom:0.5rem;'>Tier 2 · ~200 ms</div>"
-          f"<div style='font-size:1.25rem;font-weight:800;color:#38bdf8;margin-bottom:0.3rem;'>&#128269; Retrieval</div>"
-          f"<div style='font-size:0.78rem;color:#94a3b8;line-height:1.5;margin-bottom:0.75rem;'>BM25 + dense embeddings fused with RRF, re-ranked by a cross-encoder. Searches {_kb_str} real 3GPP chunks.</div>"
-          f"<div style='font-size:0.72rem;background:rgba(14,165,233,0.1);border:1px solid rgba(14,165,233,0.2);border-radius:6px;padding:4px 10px;display:inline-block;color:#38bdf8;'>Rerank logit &ge; 0.20 &#8594; stop</div></div>")
+    t2 = (f"<div style='flex:1;min-width:160px;padding:1.25rem;border-right:1px solid rgba(130,200,229,0.12);'>"
+          f"<div style='font-size:0.65rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;margin-bottom:0.5rem;'>Tier 2 · Grounded, with citations</div>"
+          f"<div style='font-size:1.25rem;font-weight:800;color:#93C572;margin-bottom:0.3rem;'>&#128269; Retrieval (RAG)</div>"
+          f"<div style='font-size:0.78rem;color:#94a3b8;line-height:1.5;margin-bottom:0.75rem;'>Hybrid BM25 + dense search across {_kb_str} indexed 3GPP chunks, reranked by a cross-encoder, synthesized into an answer that cites the spec and chunk it came from. Corpus covers it &#8594; sourced answer, not a guess.</div>"
+          f"<div style='font-size:0.72rem;background:rgba(147,197,114,0.1);border:1px solid rgba(147,197,114,0.2);border-radius:6px;padding:4px 10px;display:inline-block;color:#93C572;'>Rerank logit &ge; 0.20 &#8594; stop</div></div>")
     t3 = ("<div style='flex:1;min-width:160px;padding:1.25rem;'>"
-          "<div style='font-size:0.65rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;margin-bottom:0.5rem;'>Tier 3 · ~1.1 s</div>"
+          "<div style='font-size:0.65rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;margin-bottom:0.5rem;'>Tier 3 · Outside the corpus</div>"
           "<div style='font-size:1.25rem;font-weight:800;color:#fb923c;margin-bottom:0.3rem;'>&#129302; Generative</div>"
-          "<div style='font-size:0.78rem;color:#94a3b8;line-height:1.5;margin-bottom:0.75rem;'>Groq Llama 3.3 70B (&#8594; Gemini 2.0 Flash &#8594; local Qwen). Always answers — safety net of last resort.</div>"
+          "<div style='font-size:0.78rem;color:#94a3b8;line-height:1.5;margin-bottom:0.75rem;'>Closed-book: a general-purpose LLM (Groq Llama 3.3 70B &#8594; Gemini Flash &#8594; local Qwen) answers from its own training knowledge — no citation, because there's nothing in the corpus to cite. Always answers, so the system never just fails.</div>"
           "<div style='font-size:0.72rem;background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.2);border-radius:6px;padding:4px 10px;display:inline-block;color:#fb923c;'>Always answers</div></div>")
-    footer = "<div style='margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(14,165,233,0.1);font-size:0.78rem;color:#475569;line-height:1.6;'>Thresholds are <span style='color:#38bdf8;'>empirically calibrated</span> on 20 held-out queries via a three-point ablation curve — not guessed.</div>"
+    footer = ("<div style='margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(130,200,229,0.1);font-size:0.78rem;color:#475569;line-height:1.6;'>"
+              "Thresholds are <span style='color:#82C8E5;'>empirically calibrated</span> on 20 held-out queries via a three-point ablation curve — not guessed. "
+              "The system is designed to know the boundary of what it knows: tiers 1&ndash;2 only answer when they're confident and grounded, and tier 3's answers are "
+              "never presented as sourced from the spec corpus, because they aren't.</div>")
     st.markdown(
         f"<div class='glass-card' style='margin-bottom:1.5rem;'><div style='display:flex;align-items:stretch;gap:0;flex-wrap:wrap;'>{t1}{arr}{t2}{arr}{t3}</div>{footer}</div>",
         unsafe_allow_html=True,
@@ -831,7 +1004,7 @@ if "Overview" in page:
     # ── Tools Used ────────────────────────────────────────────────────
     st.markdown("""
     <div style="font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
-                color: #fb923c; margin-bottom: 0.6rem;">Tools &amp; Technology</div>
+                color: #82C8E5; margin-bottom: 0.6rem;">Tools &amp; Technology</div>
     <div style="font-size: 1.35rem; font-weight: 700; color: #f1f5f9; margin-bottom: 1.25rem; letter-spacing: -0.02em;">
         Every component chosen for a reason, benchmarked, not assumed.
     </div>
@@ -843,32 +1016,32 @@ if "Overview" in page:
         st.markdown("""
         <div class="glass-card">
             <div style="font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
-                        color:#4ade80; margin-bottom:0.75rem;">Retrieval Stack</div>
+                        color:#93C572; margin-bottom:0.75rem;">Retrieval Stack</div>
             <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.82rem;">
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Sparse</span>
-                    <span style="color:#4ade80; font-family:monospace; font-size:0.78rem;">BM25Okapi</span>
+                    <span style="color:#93C572; font-family:monospace; font-size:0.78rem;">BM25Okapi</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Embeddings</span>
-                    <span style="color:#4ade80; font-family:monospace; font-size:0.78rem;">BGE-small-en-v1.5</span>
+                    <span style="color:#93C572; font-family:monospace; font-size:0.78rem;">BGE-small-en-v1.5</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Vector index</span>
-                    <span style="color:#4ade80; font-family:monospace; font-size:0.78rem;">FAISS IndexFlatIP</span>
+                    <span style="color:#93C572; font-family:monospace; font-size:0.78rem;">FAISS IndexFlatIP</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Fusion</span>
-                    <span style="color:#4ade80; font-family:monospace; font-size:0.78rem;">RRF  k=60</span>
+                    <span style="color:#93C572; font-family:monospace; font-size:0.78rem;">RRF  k=60</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Cross-encoder</span>
-                    <span style="color:#4ade80; font-family:monospace; font-size:0.78rem;">BGE-reranker-base</span>
+                    <span style="color:#93C572; font-family:monospace; font-size:0.78rem;">BGE-reranker-base</span>
                 </div>
             </div>
         </div>
@@ -878,32 +1051,32 @@ if "Overview" in page:
         st.markdown("""
         <div class="glass-card">
             <div style="font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
-                        color:#38bdf8; margin-bottom:0.75rem;">Generation Stack</div>
+                        color:#fb923c; margin-bottom:0.75rem;">Generation Stack</div>
             <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.82rem;">
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Primary LLM</span>
-                    <span style="color:#38bdf8; font-family:monospace; font-size:0.78rem;">Llama 3.3 70B</span>
+                    <span style="color:#fb923c; font-family:monospace; font-size:0.78rem;">Llama 3.3 70B</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Fallback</span>
-                    <span style="color:#38bdf8; font-family:monospace; font-size:0.78rem;">Gemini 2.0 Flash</span>
+                    <span style="color:#fb923c; font-family:monospace; font-size:0.78rem;">Gemini Flash</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Local fallback</span>
-                    <span style="color:#38bdf8; font-family:monospace; font-size:0.78rem;">Qwen 2.5 1.5B</span>
+                    <span style="color:#fb923c; font-family:monospace; font-size:0.78rem;">Qwen 2.5 1.5B</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Inference API</span>
-                    <span style="color:#38bdf8; font-family:monospace; font-size:0.78rem;">Groq (free tier)</span>
+                    <span style="color:#fb923c; font-family:monospace; font-size:0.78rem;">Groq (free tier)</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Cache dedup</span>
-                    <span style="color:#38bdf8; font-family:monospace; font-size:0.78rem;">RapidFuzz Levenshtein</span>
+                    <span style="color:#fb923c; font-family:monospace; font-size:0.78rem;">RapidFuzz Levenshtein</span>
                 </div>
             </div>
         </div>
@@ -913,32 +1086,32 @@ if "Overview" in page:
         st.markdown("""
         <div class="glass-card">
             <div style="font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
-                        color:#fb923c; margin-bottom:0.75rem;">Data &amp; Eval</div>
+                        color:#82C8E5; margin-bottom:0.75rem;">Data &amp; Eval</div>
             <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.82rem;">
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">KB source</span>
-                    <span style="color:#fb923c; font-family:monospace; font-size:0.78rem;">5 live 3GPP specs</span>
+                    <span style="color:#82C8E5; font-family:monospace; font-size:0.78rem;">5 live 3GPP specs</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Dedup</span>
-                    <span style="color:#fb923c; font-family:monospace; font-size:0.78rem;">MinHash LSH ≥0.85</span>
+                    <span style="color:#82C8E5; font-family:monospace; font-size:0.78rem;">MinHash LSH ≥0.85</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Quality metric</span>
-                    <span style="color:#fb923c; font-family:monospace; font-size:0.78rem;">BERTScore F1</span>
+                    <span style="color:#82C8E5; font-family:monospace; font-size:0.78rem;">BERTScore F1</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Synth Q&amp;A</span>
-                    <span style="color:#fb923c; font-family:monospace; font-size:0.78rem;">Llama 3.3 70B</span>
+                    <span style="color:#82C8E5; font-family:monospace; font-size:0.78rem;">Llama 3.3 70B</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;
                              padding:0.45rem 0.7rem; background:rgba(8,20,40,0.5); border-radius:7px;">
                     <span style="color:#94a3b8;">Test suite</span>
-                    <span style="color:#fb923c; font-family:monospace; font-size:0.78rem;">142 tests · pytest</span>
+                    <span style="color:#82C8E5; font-family:monospace; font-size:0.78rem;">142 tests · pytest</span>
                 </div>
             </div>
         </div>
@@ -972,8 +1145,8 @@ elif "Live Query" in page:
     ]
 
     PILL_COLORS = {
-        "cache":      ("rgba(34,197,94,0.12)",  "rgba(34,197,94,0.3)",  "#4ade80"),
-        "retrieval":  ("rgba(14,165,233,0.12)", "rgba(14,165,233,0.3)", "#38bdf8"),
+        "cache":      ("rgba(130,200,229,0.12)",  "rgba(130,200,229,0.3)",  "#82C8E5"),
+        "retrieval":  ("rgba(147,197,114,0.12)", "rgba(147,197,114,0.3)", "#93C572"),
         "generative": ("rgba(251,146,60,0.12)", "rgba(251,146,60,0.3)", "#fb923c"),
     }
 
@@ -995,15 +1168,15 @@ elif "Live Query" in page:
         line-height:1.5 !important;
         box-shadow:none !important;
         background:transparent !important;
-        border:1px solid rgba(14,165,233,0.35) !important;
+        border:1px solid rgba(130,200,229,0.35) !important;
         color:#94a3b8 !important;
         transform:none !important;
         transition:background 0.15s,color 0.15s !important;
     }
     div[data-testid="column"] .stButton>button:hover {
-        background:rgba(14,165,233,0.12) !important;
+        background:rgba(130,200,229,0.12) !important;
         color:#e2e8f0 !important;
-        border-color:rgba(14,165,233,0.6) !important;
+        border-color:rgba(130,200,229,0.6) !important;
     }
     </style>""", unsafe_allow_html=True)
 
@@ -1026,7 +1199,7 @@ elif "Live Query" in page:
 
     st.markdown(
         "<div style='font-size:0.72rem;color:#334155;margin:0.5rem 0 0.75rem 0;'>"
-        "🟢 Green = likely cache &nbsp;·&nbsp; 🔵 Blue = likely retrieval &nbsp;·&nbsp; 🟠 Orange = likely generative"
+        "🔵 Blue = likely cache &nbsp;·&nbsp; 🟢 Green = likely retrieval (RAG, cited) &nbsp;·&nbsp; 🟠 Orange = likely generative"
         "</div>",
         unsafe_allow_html=True,
     )
@@ -1153,7 +1326,7 @@ elif "Live Query" in page:
             <div class="glass-card" style="padding:0.875rem 1rem; cursor:pointer;">
                 <div style="font-size:0.68rem; color:#64748b; text-transform:uppercase;
                              letter-spacing:0.08em; margin-bottom:0.3rem;">{label}</div>
-                <div style="font-size:0.82rem; color:#cbd5e1;">{q}</div>
+                <div style="font-size:0.82rem; color:#F5F5DC;">{q}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -1254,7 +1427,7 @@ elif "Eval Results" in page:
             vals = [overall.get(f"{p}_sec", 0) * 1000 for p in pctls]
             fig = go.Figure(go.Bar(
                 x=pctls, y=vals,
-                marker_color=["#4ade80", "#38bdf8", "#fb923c"],
+                marker_color=["#82C8E5", "#93C572", "#fb923c"],
                 marker_line_color="rgba(0,0,0,0)",
                 text=[f"{v:.0f}ms" for v in vals],
                 textposition="outside",
@@ -1358,7 +1531,7 @@ elif "Query Log" in page:
                 No queries logged yet
             </div>
             <div style="font-size:0.85rem; color:#475569; max-width:400px; margin:0 auto;">
-                Run some queries in the <strong style="color:#38bdf8">Live Query</strong> tab.
+                Run some queries in the <strong style="color:#82C8E5">Live Query</strong> tab.
                 Each query is automatically appended to <code>outputs/query_metrics.jsonl</code>.
             </div>
         </div>
@@ -1538,7 +1711,7 @@ elif "Cache Inspector" in page:
     if additions:
         st.markdown("""<hr>""", unsafe_allow_html=True)
         st.markdown(f"""
-        <div style="font-size:0.85rem; font-weight:600; color:#4ade80; margin-bottom:0.75rem;
+        <div style="font-size:0.85rem; font-weight:600; color:#82C8E5; margin-bottom:0.75rem;
                     text-transform:uppercase; letter-spacing:0.08em;">
             ✅ Phase 6 Auto-Promoted Entries ({len(additions)})
         </div>

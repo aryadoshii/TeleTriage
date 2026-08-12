@@ -66,6 +66,8 @@ def info() -> None:
                   f"min_conf={cfg.cache_tier.min_confidence})")
     console.print(f"[bold]Retrieval enabled:[/] {cfg.retrieval_tier.enabled} "
                   f"(embedder={cfg.retrieval_tier.embedder_model})")
+    console.print(f"[bold]  Synthesis backend order:[/] {cfg.retrieval_tier.backend_order} "
+                  f"(model={cfg.retrieval_tier.synthesis_model})")
 
     manifest = load_index_manifest(cfg.resolve_path(cfg.paths.faiss_index_dir))
     configured_kb = cfg.resolve_path(cfg.paths.knowledge_base)
@@ -88,10 +90,27 @@ def info() -> None:
                 f"[bold]uv run python scripts/build_index.py[/bold][/yellow]"
             )
 
+    _gen_models = {
+        "groq": cfg.generative_tier.groq_model,
+        "gemini": cfg.generative_tier.gemini_model,
+        "local": cfg.generative_tier.local_model,
+    }
+    _gen_order = cfg.generative_tier.backend_order
+    _gen_primary = _gen_order[0] if _gen_order else "?"
     console.print(f"[bold]Generative enabled:[/] {cfg.generative_tier.enabled} "
-                  f"(backend={cfg.generative_tier.backend}, "
-                  f"model={cfg.generative_tier.groq_model})")
-    console.print(f"[bold]Groq key set:[/] {'yes' if cfg.secrets.groq_api_key else 'no'}")
+                  f"(backend_order={_gen_order}, "
+                  f"primary={_gen_primary} model={_gen_models.get(_gen_primary, '?')})")
+    console.print(f"[bold]Groq key (tier 2) set:[/] {'yes' if cfg.secrets.groq_api_key else 'no'}")
+    if cfg.secrets.groq_api_key_tier3:
+        console.print("[bold]Groq key (tier 3) set:[/] yes")
+    elif cfg.secrets.groq_api_key:
+        console.print(
+            "[yellow]Groq key (tier 3) set:[/] no — using shared key "
+            "(tier 2 and tier 3 will compete for one 12,000 TPM pool; "
+            "set GROQ_API_KEY_TIER3 in .env for isolation)"
+        )
+    else:
+        console.print("[bold]Groq key (tier 3) set:[/] no")
     console.print(f"[bold]Gemini key set:[/] {'yes' if cfg.secrets.google_api_key else 'no'}")
 
 

@@ -154,6 +154,13 @@ class EvalResult:
     bertscore_f1: float
     expected_tier: str         # hint from EvalItem (non-binding)
     tier_match: bool           # answered_by == expected_tier
+    # Which LLM backend (groq/gemini/local) actually produced this answer,
+    # or None if no LLM call was involved (cache tier, or a tier that
+    # delegated). Surfaced as a first-class field — not just buried in
+    # `details` — specifically so a report can show "X/20 on Groq, Y/20
+    # fell back to Gemini" without every consumer having to know which
+    # tier stashes it under which details key. See _extract_backend().
+    backend: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -173,6 +180,12 @@ class EvalReport:
       n_queries       total queries evaluated
       overall         aggregate quality + latency metrics
       tier_distribution  count + % per tier
+      backend_distribution  count + % per LLM backend, among queries that
+                        actually made an LLM call (generative tier, or
+                        retrieval tier's RAG synthesis) — e.g. "9/20 fell
+                        back to Gemini" instead of that being invisible
+                        inside per-query `details`. Queries answered by
+                        cache (no LLM call) are excluded from the % base.
       per_tier        quality + latency metrics broken down by answering tier
       per_query       one EvalResult per query (the raw data for reanalysis)
     """
@@ -181,6 +194,7 @@ class EvalReport:
     n_queries: int
     overall: dict[str, Any]
     tier_distribution: dict[str, Any]
+    backend_distribution: dict[str, Any]
     per_tier: dict[str, Any]
     per_query: list[dict[str, Any]]
 
@@ -222,7 +236,9 @@ class Evaluator:
         self._bertscore_model = bertscore_model
         self._verbose = verbose
 
-    def run(self, router: Router, items: list[EvalItem]) -> EvalReport:
+    def run(
+        self, router: Router, items: list[EvalItem], pacing_sec: float = 0.0
+    ) -> EvalReport:
         """
         Evaluate the router over the given items.
 
@@ -232,6 +248,15 @@ class Evaluator:
           3. Batch-compute BERTScore for all queries at once (single model load).
           4. Aggregate per-tier and overall statistics.
           5. Return a structured EvalReport.
+
+        pacing_sec: seconds to sleep between queries (default 0 = no
+        pacing, the old behaviour). Queries whose answer involves an LLM
+        call (generative tier, or retrieval tier's RAG synthesis) share
+        Groq's per-model TPM budget — firing 20 back-to-back with no
+        pacing measurably throttles partway through and silently falls
+        back to Gemini for the rest (confirmed: 9/20 fell back in an
+        unpaced run). Pacing here mirrors the fix already applied to
+        scripts/eval_synthesis_latency.py for the same underlying issue.
         """
         from backend.config import get_config
 
@@ -239,7 +264,8 @@ class Evaluator:
         n = len(items)
 
         if self._verbose:
-            print(f"\nRunning eval on {n} queries…")
+            pacing_note = f", {pacing_sec}s pacing between queries" if pacing_sec > 0 else ""
+            print(f"\nRunning eval on {n} queries{pacing_note}…")
 
         # ── Phase 1: run all queries through the router ────────────────
         raw_results: list[dict[str, Any]] = []
@@ -252,6 +278,7 @@ class Evaluator:
                 t0 = time.perf_counter()
                 response = router.route(Query(text=item.query))
                 elapsed = time.perf_counter() - t0
+                details = response.tier_trace[-1].details if response.tier_trace else {}
 
                 raw_results.append({
                     "item": item,
@@ -259,7 +286,8 @@ class Evaluator:
                     "answered_by": response.answered_by.value,
                     "confidence": response.confidence,
                     "latency_sec": elapsed,
-                    "details": response.tier_trace[-1].details if response.tier_trace else {},
+                    "details": details,
+                    "backend": self._extract_backend(response.answered_by.value, details),
                 })
             except Exception as exc:  # noqa: BLE001
                 log.error("Query %s failed: %s", item.id, exc)
@@ -270,7 +298,11 @@ class Evaluator:
                     "confidence": 0.0,
                     "latency_sec": 0.0,
                     "details": {"error": str(exc)},
+                    "backend": None,
                 })
+
+            if pacing_sec > 0 and i < n - 1:
+                time.sleep(pacing_sec)
 
         # ── Phase 2: ROUGE-L (cheap, per-query) ───────────────────────
         if self._verbose:
@@ -306,6 +338,7 @@ class Evaluator:
                 bertscore_f1=float(bert),
                 expected_tier=item.expected_tier,
                 tier_match=(answered_by == item.expected_tier),
+                backend=raw["backend"],
                 details=raw["details"],
             )
             eval_results.append(er)
@@ -317,6 +350,28 @@ class Evaluator:
             print()
 
         return report
+
+    # ─── Backend extraction ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_backend(answered_by: str, details: dict[str, Any]) -> str | None:
+        """
+        Which LLM backend (groq/gemini/local) actually produced this
+        answer, or None if no LLM call was involved.
+
+        The key differs by tier because each tier's TierResult.details
+        was designed independently: generative_tier.py stores "backend"
+        directly; retrieval_tier.py's RAG synthesis stores
+        "synthesis_backend" (see its docstring for why — it reuses the
+        same FallbackClient as generative but the key is prefixed to
+        avoid colliding with retrieval's OWN details, e.g. rerank
+        scores). Cache tier makes no LLM call, so this returns None.
+        """
+        if answered_by == "generative":
+            return details.get("backend")
+        if answered_by == "retrieval":
+            return details.get("synthesis_backend")
+        return None
 
     # ─── BERTScore in subprocess ──────────────────────────────────────────────
 
@@ -390,12 +445,31 @@ class Evaluator:
             lat = latency_percentiles([r.latency_sec for r in tier_results])
             per_tier[tier_name] = {**quality, **lat.to_dict(), "n": len(tier_results)}
 
+        # Backend distribution — among queries that made an LLM call only
+        # (r.backend is None for cache hits and failed/errored queries).
+        # % base is n_llm_calls, NOT n_queries, so "100% groq" is possible
+        # even when cache answered half the eval set.
+        llm_results = [r for r in results if r.backend is not None]
+        n_llm = len(llm_results)
+        by_backend: dict[str, int] = {}
+        for r in llm_results:
+            by_backend[r.backend] = by_backend.get(r.backend, 0) + 1
+        backend_distribution: dict[str, Any] = {
+            backend: {
+                "count": count,
+                "pct": round(100.0 * count / n_llm, 1) if n_llm > 0 else 0.0,
+            }
+            for backend, count in by_backend.items()
+        }
+        backend_distribution["_n_llm_calls"] = n_llm
+
         return EvalReport(
             timestamp=datetime.now(timezone.utc).isoformat(),
             system_version=version,
             n_queries=n,
             overall=overall,
             tier_distribution=tier_distribution,
+            backend_distribution=backend_distribution,
             per_tier=per_tier,
             per_query=[r.to_dict() for r in results],
         )
@@ -431,4 +505,5 @@ class Evaluator:
             latency=lat,
             tier_counts=tier_counts,
             n_total=report.n_queries,
+            backend_distribution=report.backend_distribution,
         )

@@ -1,6 +1,26 @@
 """
 Retrieval-Augmented Generation (RAG) Tier — Phase 2 implementation.
 
+Tier 2 retrieves the top-scoring chunks from the corpus (hybrid BM25 +
+dense search, fused with RRF, reranked with a cross-encoder) and then
+SYNTHESIZES an answer from them via an LLM constrained to that retrieved
+context — genuine RAG, not extractive lookup.
+
+  Previous design (superseded): tier 2 returned the single best-matching
+  KB document's `answer` field VERBATIM. That only worked because a
+  parallel synth-QA pipeline (scripts/synth_qa.py + scripts/
+  build_synth_kb.py) existed just to manufacture pre-written, directly-
+  answerable Q&A pairs from raw spec chunks — expensive (LLM-rate-
+  limited generation), slow to grow (166 of 7,236 available chunks
+  covered after that pipeline's first runs), and fundamentally a
+  workaround for tier 2 not actually generating anything itself. That
+  pipeline is NOT deleted — scripts/synth_qa.py and
+  scripts/build_synth_kb.py remain in the repo as a documented
+  alternative corpus path (database/synth_kb.jsonl) — but it's no longer
+  on the critical path: tier 2 now runs directly over
+  database/real_kb.jsonl's 7,236 raw 3GPP chunks, no synthetic Q&A
+  manufacturing required.
+
 Architecture:
 
   ┌─────────────────────────────────────────────────────────────────┐
@@ -25,10 +45,22 @@ Architecture:
             │  Cross-encoder       │   Joint (query, doc) encoding.
             │  reranker            │   Sigmoid(logit) → confidence.
             │  (bge-reranker-base) │
-            │  final_top_k=1       │
+            │  top_k=max(3, K)     │   K = synthesis_top_k (default 5).
+            └──────────┬───────────┘
+                       ▼
+            ┌──────────────────────┐   Gate on reranker logit BEFORE
+            │  Confidence gate     │   spending an LLM call — delegate
+            │  (min_rerank_score)  │   to tier 3 on a miss, no synthesis.
+            └──────────┬───────────┘
+                       ▼ (pass)
+            ┌──────────────────────┐
+            │  RAG synthesis       │   Groq llama-3.3-70b-versatile —
+            │  (top-K chunks as    │   see synthesis_model config field),
+            │   grounding context) │   reusing tier 3's FallbackClient.
             └──────────┬───────────┘
                        ▼
                    TierResult
+                (answer + citations)
 
 Startup note:
   __init__ loads the BM25 + FAISS indexes from disk (built by
@@ -41,15 +73,189 @@ import json
 from pathlib import Path
 
 from backend.config import get_config
+from backend.generation.llm_client import (
+    AllBackendsFailedError,
+    FallbackClient,
+    make_llm_client,
+)
 from backend.retrieval import (
     BM25Retriever,
     CrossEncoderReranker,
     DenseRetriever,
     Embedder,
+    Hit,
     reciprocal_rank_fusion,
 )
 from backend.tiers.base import BaseTier
 from backend.types import Query, TierName, TierResult
+
+# Max answer chars carried per candidate into TierResult.details["candidates"].
+# Mirrors llm_client.MAX_CONTEXT_CHARS's spirit (bound token spend) but
+# applied per-candidate here so 3 candidates can't blow the prompt budget
+# on their own before build_user_prompt even gets to apply its own cap.
+_CANDIDATE_ANSWER_CHARS = 800
+
+# Generation params for tier 2's synthesis call. Not config fields (unlike
+# synthesis_top_k/synthesis_model) — these are stable implementation
+# details of the synthesis prompt itself, not something a deployer tunes
+# per environment. Same low temperature as tier 3, same rationale: we
+# want consistent, reproducible troubleshooting advice, not creative
+# variation.
+_SYNTHESIS_MAX_TOKENS = 512
+_SYNTHESIS_TEMPERATURE = 0.2
+
+# Same model as tier 3 (see RetrievalTierConfig.synthesis_model in
+# backend/config.py) — NOT deliberately smaller/cheaper. It used to be
+# llama-3.1-8b-instant on the theory that synthesizing strictly from
+# provided context is easier than tier 3's open-domain reasoning and
+# doesn't need 70B-model depth, keeping the cascade cost-aware even
+# though tier 2 fires on every retrieval hit (the common case, not the
+# exception). Measured reality (scripts/eval_synthesis_latency.py,
+# 2026-08-11): that model's free-tier budget is only 6000 TPM, which
+# rate-limited 56% of synthesis calls outright at 5s between calls —
+# not viable for a demo-able system regardless of synthesis_top_k/
+# synthesis_chunk_chars tuning. The cost-tier distinction is given up
+# for now in favor of reliability; revisit if a higher-TPM tier or a
+# different small-model provider becomes available.
+# Structure mirrors backend/tiers/generative_tier.py's SYSTEM_PROMPT
+# exactly (root cause / diagnostic steps / remediation) — tier 2 and
+# tier 3 should look like the same engineer answered, whichever one
+# actually did. Without an explicit structure, the model's default
+# instinct with "here are some excerpts, answer the question" is to
+# summarize the excerpts one by one rather than synthesize a diagnosis —
+# observed live: it walked through all 5 excerpts in order ("Excerpt 2
+# states that... which implies..."), opened every paragraph with
+# "Excerpt N states", and never actually said why the fault happens or
+# what to check. The forbidden-phrasing rule below exists because
+# telling the model to "answer using the excerpts" wasn't sufficient by
+# itself to stop it narrating through them.
+SYNTHESIS_SYSTEM_PROMPT = """You are a telecom network engineer diagnosing a fault using ONLY the \
+3GPP specification excerpts provided below.
+
+Structure your answer EXACTLY as:
+1. Most likely root cause (one sentence)
+2. Diagnostic steps (numbered list, max 5 steps)
+3. Remediation (numbered list, max 3 steps)
+
+Rules:
+- Answer using ONLY the provided excerpts — never fall back on outside \
+knowledge or training data to fill gaps.
+- Ground every claim in the excerpts and cite the source spec inline for \
+each one, e.g. "(3GPP TS 36.300)".
+- SYNTHESIZE across the excerpts into the structure above — never \
+structure the answer by walking through them in order. Phrasing like \
+"Excerpt 3 states..." or "Excerpt 2 mentions..." is forbidden; write as \
+if you already know the material, citing the spec, not the excerpt \
+number.
+- Never restate the question as if it were a finding or a conclusion.
+- If the excerpts only partially cover the question, answer the covered \
+part in the structure above and state plainly what's missing — do not \
+guess at the rest.
+- If the excerpts contain nothing relevant to the question at all, say \
+so explicitly instead of guessing.
+- Be concise and technical. No preamble."""
+
+
+def _build_candidates(reranked: list[Hit]) -> list[dict]:
+    """
+    Package up to 3 reranked candidates as grounding context for
+    downstream tiers.
+
+    Used by the generative tier when retrieval's own confidence gate
+    isn't met — see backend/generation/llm_client.py design decision (1)
+    and backend/router.py, which is what actually carries this from one
+    tier's TierResult into the next tier's Query.metadata.
+
+    Populated on BOTH of RetrievalTier.answer()'s return paths, not just
+    the delegation path — even when retrieval confidently answers on its
+    own (and the router therefore never reaches a next tier to hand this
+    to), the runner-up candidates are still useful for eval/observability
+    tooling inspecting why the winner won. Costs nothing to include
+    either way, since reranked already holds all the scored hits.
+
+    This doesn't change WHICH document answers: reranked[0] remains the
+    top candidate regardless of how many candidates rerank() was asked
+    for. It changes how many of the already-scored candidates get
+    exposed: the cross-encoder scores every fused candidate before
+    sorting and picking a winner, so asking for more back than the
+    minimum needed is free.
+    """
+    return [
+        {
+            "doc_id": hit.doc_id,
+            "question": hit.doc.get("question", ""),
+            "answer": hit.doc.get("answer", "")[:_CANDIDATE_ANSWER_CHARS],
+            "logit": hit.score,
+        }
+        for hit in reranked[:3]
+    ]
+
+
+def _build_synthesis_prompt(
+    query_text: str, chunks: list[Hit], chunk_chars: int | None = None
+) -> str:
+    """
+    Build the user-turn prompt for tier 2's synthesis call: the query
+    plus every chunk passed to the synthesizer, each labelled with its
+    source spec and chunk id so the model can cite them — and so a human
+    reading the prompt in a debug log can trace every claim back to a
+    specific chunk.
+
+    Deliberately labelled "[spec, chunk id]:", NOT "Excerpt N [...]:" —
+    an earlier version numbered them, and the model echoed that framing
+    straight back into its answers ("Excerpt 3 states...", walking
+    through excerpts in order instead of synthesizing). Removing the
+    ordinal numbering from the INPUT removes the stimulus that invited
+    it, on top of SYNTHESIS_SYSTEM_PROMPT's explicit prohibition — belt
+    and suspenders.
+
+    chunk_chars: per-chunk truncation. None (default) means no
+    truncation — scripts/scrape_data.py already bounds every chunk to
+    ~2048 chars. See RetrievalTierConfig.synthesis_chunk_chars and
+    scripts/eval_synthesis_latency.py, which measures the latency/
+    prompt-size tradeoff across values before picking a non-None one —
+    do not guess a value here.
+    """
+    def _chunk_text(hit: Hit) -> str:
+        text = hit.doc.get("answer", "")
+        return text[:chunk_chars] if chunk_chars is not None else text
+
+    excerpts = "\n\n".join(
+        f"[{hit.doc.get('source', 'unknown spec')}, chunk {hit.doc_id}]:\n{_chunk_text(hit)}"
+        for hit in chunks
+    )
+    return (
+        f"Question: {query_text}\n\n"
+        f"{excerpts}\n\n"
+        f"Diagnose the fault using ONLY the excerpts above, in the "
+        f"required root-cause / diagnostic-steps / remediation "
+        f"structure. Cite the source spec for each claim, not the "
+        f"excerpt's position in this list. If the excerpts don't fully "
+        f"cover the question, answer what they do cover and state "
+        f"plainly what's missing."
+    )
+
+
+def _build_citations(chunks: list[Hit]) -> list[dict]:
+    """
+    Provenance record of exactly which chunks were passed to the
+    synthesizer, for TierResult.details["citations"] — what the CLI and
+    dashboard use to show "this answer was built from these sources."
+
+    Distinct from _build_candidates()'s "candidates" field: candidates is
+    a general top-3 preview populated on every answer() path (including
+    the delegation path, where no LLM was ever called); citations only
+    exists when synthesis actually happened, and covers however many
+    chunks synthesis_top_k configured — not capped at 3.
+    """
+    return [
+        {
+            "spec_id": hit.doc.get("spec_id", ""),
+            "chunk_id": hit.doc_id,
+            "source": hit.doc.get("source", ""),
+        }
+        for hit in chunks
+    ]
 
 
 def load_index_manifest(index_dir: Path) -> dict | None:
@@ -104,6 +310,49 @@ class RetrievalTier(BaseTier):
         # indexes predate manifest.json. Never raises on absence.
         self.index_manifest = load_index_manifest(index_dir)
 
+        # Synthesis LLM — reuses the SAME FallbackClient machinery as
+        # tier 3 (backend/generation/llm_client.py), same Groq-primary
+        # backend_order, but authenticates with cfg.secrets.groq_api_key
+        # — tier 3 (generative_tier.py) uses a SEPARATE key
+        # (groq_api_key_tier3) so the two tiers draw from independent
+        # 12,000 TPM pools instead of silently competing for one (see
+        # Secrets.groq_api_key_tier3's docstring in backend/config.py and
+        # make_llm_client()'s docstring for the full story). Groq/Gemini/
+        # local clients are constructed but make no network calls until
+        # generate() is actually invoked.
+        self._synthesis_client: FallbackClient = make_llm_client(
+            groq_api_key=cfg.secrets.groq_api_key,
+            google_api_key=cfg.secrets.google_api_key,
+            groq_model=self._cfg.synthesis_model,
+            gemini_model=cfg.generative_tier.gemini_model,
+            local_model=cfg.generative_tier.local_model,
+            backend_order=self._cfg.backend_order,
+            client_name="tier2-synthesis",
+        )
+
+    def debug_search(self, query_text: str, top_k: int = 10) -> list[Hit]:
+        """
+        Run the full BM25 -> dense -> RRF -> rerank pipeline and return the
+        top_k reranked hits directly — bypassing answer()'s confidence
+        gate entirely and its synthesis call.
+
+        For tooling/observability only — scripts/label_relevance.py needs
+        to show a human reviewer more candidates than answer() itself
+        ever surfaces, to build the relevance judgements
+        backend/evaluation/retrieval_metrics.py scores against. Never
+        called from the production query path.
+        """
+        bm25_hits = self._bm25.search(query_text, k=self._cfg.bm25_top_k)
+        dense_hits = self._dense.search(query_text, k=self._cfg.dense_top_k)
+        fused = reciprocal_rank_fusion(
+            [bm25_hits, dense_hits],
+            k=self._cfg.rrf_k,
+            top_k=self._cfg.rerank_top_k,
+        )
+        if not fused:
+            return []
+        return self._reranker.rerank(query_text, fused, top_k=top_k)
+
     def answer(self, query: Query) -> TierResult:
         start = self._now()
 
@@ -132,10 +381,17 @@ class RetrievalTier(BaseTier):
         # ── Step 4: Cross-encoder reranking ───────────────────────────────
         # Joint (query, doc) encoding for precise relevance scoring.
         # Returns raw logits; positive logit ≈ relevant.
+        #
+        # top_k = max(3, synthesis_top_k): one rerank call serves both
+        # _build_candidates' fixed top-3 preview AND however many chunks
+        # synthesis_top_k wants for the RAG prompt below — the cross-
+        # encoder already scores every fused candidate before sorting, so
+        # asking for more back than the historical minimum of 1 is free.
+        rerank_top_k = max(3, self._cfg.synthesis_top_k)
         reranked = self._reranker.rerank(
             query.text,
             fused,
-            top_k=self._cfg.final_top_k,
+            top_k=rerank_top_k,
         )
 
         if not reranked:
@@ -143,10 +399,13 @@ class RetrievalTier(BaseTier):
 
         best = reranked[0]
         confidence = self._reranker.confidence_from_logit(best.score)
+        candidates = _build_candidates(reranked)
 
-        # ── Step 5: Confidence gate ────────────────────────────────────────
-        # If the reranker doesn't think the best hit is relevant, delegate
-        # to the generative tier rather than returning a bad answer.
+        # ── Step 5: Confidence gate — BEFORE calling the LLM ───────────────
+        # Gate stays exactly where it was: on the reranker logit, not on
+        # anything the synthesizer produces. Ordering matters — we must
+        # not spend an LLM call synthesizing from retrieval we already
+        # know is bad; delegate to tier 3 immediately instead.
         if best.score < self._cfg.min_rerank_score:
             return TierResult(
                 tier=self.tier_name,
@@ -158,12 +417,53 @@ class RetrievalTier(BaseTier):
                     "best_doc_id": best.doc_id,
                     "rerank_logit": best.score,
                     "rerank_confidence": confidence,
+                    "candidates": candidates,
+                },
+            )
+
+        # ── Step 6: RAG synthesis ──────────────────────────────────────────
+        # Gate passed — synthesize an answer from the top synthesis_top_k
+        # reranked chunks, grounded ONLY in their text (see
+        # SYNTHESIS_SYSTEM_PROMPT above). This replaces the old extractive
+        # behaviour (returning best.doc["answer"] verbatim) — see this
+        # module's docstring for why.
+        synthesis_chunks = reranked[: self._cfg.synthesis_top_k]
+        user_prompt = _build_synthesis_prompt(
+            query.text, synthesis_chunks, chunk_chars=self._cfg.synthesis_chunk_chars,
+        )
+
+        try:
+            output = self._synthesis_client.generate(
+                system=SYNTHESIS_SYSTEM_PROMPT,
+                user=user_prompt,
+                max_tokens=_SYNTHESIS_MAX_TOKENS,
+                temperature=_SYNTHESIS_TEMPERATURE,
+            )
+        except AllBackendsFailedError as exc:
+            # Tier 2 isn't the last tier — unlike tier 3, it can safely
+            # delegate rather than surface a hard error. Retrieval itself
+            # succeeded here; only synthesis failed, so let tier 3 take a
+            # fresh shot (it may even reuse these same candidates as
+            # grounding context via the router's retrieved_context wiring
+            # — see backend/router.py and llm_client.py design decision (1)).
+            return TierResult(
+                tier=self.tier_name,
+                answer=None,
+                confidence=confidence,
+                latency_sec=self._now() - start,
+                details={
+                    "reason": "synthesis_failed",
+                    "error": str(exc),
+                    "best_doc_id": best.doc_id,
+                    "rerank_logit": best.score,
+                    "rerank_confidence": confidence,
+                    "candidates": candidates,
                 },
             )
 
         return TierResult(
             tier=self.tier_name,
-            answer=best.doc["answer"],
+            answer=output.text,
             confidence=confidence,
             latency_sec=self._now() - start,
             details={
@@ -173,5 +473,16 @@ class RetrievalTier(BaseTier):
                 "bm25_candidates": len(bm25_hits),
                 "dense_candidates": len(dense_hits),
                 "fused_candidates": len(fused),
+                "candidates": candidates,
+                "citations": _build_citations(synthesis_chunks),
+                "synthesis_backend": output.backend,
+                "synthesis_model": output.model,
+                "synthesis_tokens_used": output.tokens_used,
+                # See llm_client.py's GroqClient docstring ("CONFIRMED
+                # BUG") — before that fix, a retry could inflate
+                # latency_sec above by 20-50x with zero way to tell from
+                # outside. Non-zero here means the reported latency
+                # includes at least one retry, not pure inference time.
+                "synthesis_retry_count": output.retry_count,
             },
         )

@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from rouge_score import rouge_scorer
@@ -236,12 +237,20 @@ def format_metrics_table(
     latency: LatencyPercentiles,
     tier_counts: dict[str, int],
     n_total: int,
+    backend_distribution: dict[str, Any] | None = None,
 ) -> str:
     """
     Render a human-readable summary table as a plain-text string.
 
     Does NOT require rich or any external formatting library so the output
     can be written to files, logged, or piped without dependencies.
+
+    backend_distribution: optional, from EvalReport.backend_distribution —
+    which LLM backend (groq/gemini/local) actually answered each LLM-
+    routed query, e.g. "9/20 fell back to Gemini" made visible instead of
+    silently averaged into one latency number. Omitted (None) by callers
+    that don't have it (e.g. existing tests predating this field) — the
+    section is simply skipped, not an error.
     """
     lines: list[str] = []
 
@@ -260,6 +269,18 @@ def format_metrics_table(
         pct = _safe_pct(count, n_total)
         lines.append(f"  {tier:<15} {count:>4} queries  ({pct:.1f}%)")
     lines.append("")
+
+    # ── Backend distribution (which LLM actually answered) ──────────────
+    if backend_distribution:
+        n_llm = backend_distribution.get("_n_llm_calls", 0)
+        backend_counts = {k: v for k, v in backend_distribution.items() if k != "_n_llm_calls"}
+        if n_llm > 0:
+            lines.append("  Backend Distribution (of LLM-routed queries)")
+            lines.append("  " + "-" * 50)
+            for backend, data in sorted(backend_counts.items()):
+                count = data.get("count", 0)
+                lines.append(f"  {backend:<15} {count:>4}/{n_llm} queries  ({data.get('pct', 0):.1f}%)")
+            lines.append("")
 
     # ── Quality metrics ────────────────────────────────────────────────
     lines.append(row("Metric", "ROUGE-L", "BERTScore", "n"))

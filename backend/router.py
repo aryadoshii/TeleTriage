@@ -66,11 +66,24 @@ class Router:
         if isinstance(query, str):
             query = Query(text=query)
 
+        # `query` (the parameter) is never reassigned below — every
+        # Response(query=...) call reports what the caller actually
+        # submitted. `current_query` is the one actually handed to each
+        # tier, and MAY be a different object than `query` once a tier
+        # contributes candidates (see below).
+        current_query = query
+
         start = time.perf_counter()
         trace: list[TierResult] = []
+        # Accumulated across tiers as the cascade proceeds. Currently only
+        # the retrieval tier ever populates TierResult.details["candidates"]
+        # (see backend/tiers/retrieval_tier.py's _build_candidates), but
+        # this loop is tier-agnostic by design — any tier that delegates
+        # and leaves "candidates" in its details gets folded in here.
+        candidates: list[dict] = []
 
         for tier in self.tiers:
-            result = tier.answer(query)
+            result = tier.answer(current_query)
             trace.append(result)
 
             log.debug(
@@ -90,6 +103,21 @@ class Router:
                     confidence=result.confidence,
                     total_latency_sec=time.perf_counter() - start,
                     tier_trace=trace,
+                )
+
+            # This tier delegated. If it surfaced candidates, carry them
+            # forward as grounding context for whichever tier answers
+            # next — see backend/generation/llm_client.py design
+            # decision (1). Query is a frozen Pydantic model, so
+            # "carrying forward" means building a NEW Query with enriched
+            # metadata rather than mutating current_query in place.
+            new_candidates = result.details.get("candidates")
+            if new_candidates:
+                candidates = candidates + list(new_candidates)
+                current_query = Query(
+                    text=current_query.text,
+                    metadata={**current_query.metadata, "retrieved_context": candidates},
+                    created_at=current_query.created_at,
                 )
 
         # Every tier delegated. This shouldn't happen if the generative

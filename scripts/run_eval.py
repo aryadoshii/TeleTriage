@@ -7,6 +7,8 @@ Usage:
     uv run python scripts/run_eval.py --subset retrieval     # only retrieval-expected queries
     uv run python scripts/run_eval.py --no-generative        # skip generative tier (faster)
     uv run python scripts/run_eval.py --bertscore-model roberta-large  # higher quality BERTScore
+    uv run python scripts/run_eval.py --pacing-sec 5          # slower pacing if 3s still throttles
+    uv run python scripts/run_eval.py --pacing-sec 0          # old unpaced behaviour
 
 Prerequisites:
     1. Build retrieval indexes:  uv run python scripts/build_index.py
@@ -82,6 +84,15 @@ def main(
         "distilbert-base-uncased", "--bertscore-model",
         help="Transformer model for BERTScore (distilbert-base-uncased or roberta-large)",
     ),
+    pacing_sec: float = typer.Option(
+        3.0, "--pacing-sec",
+        help="Seconds to sleep between queries. LLM-routed queries (generative, "
+             "or retrieval's RAG synthesis) share Groq's per-model TPM budget — "
+             "firing all queries back-to-back with no pacing measurably throttles "
+             "partway through and silently falls back to Gemini for the rest "
+             "(confirmed: 9/20 fell back in an unpaced run). Set to 0 to disable "
+             "and restore the old unpaced behaviour.",
+    ),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
     cfg = get_config()
@@ -100,6 +111,7 @@ def main(
         console.print(f"  Queries:       {len(items)}")
         console.print(f"  BERTScore:     {bertscore_model}")
         console.print(f"  Generative:    {'disabled' if no_generative else 'enabled'}")
+        console.print(f"  Pacing:        {pacing_sec}s between queries" + (" (disabled)" if pacing_sec <= 0 else ""))
         console.print()
 
     # ── Build router ───────────────────────────────────────────────────
@@ -114,7 +126,7 @@ def main(
     evaluator = Evaluator(bertscore_model=bertscore_model, verbose=not quiet)
 
     try:
-        report = evaluator.run(router, items)
+        report = evaluator.run(router, items, pacing_sec=pacing_sec)
     except Exception as exc:
         console.print(f"[red]Evaluation failed: {exc}[/red]")
         raise typer.Exit(1)

@@ -57,13 +57,77 @@ class RetrievalTierConfig(BaseModel):
     rrf_k: int = 60
     min_rerank_score: float = 0.20  # calibrated via 3-point ablation curve, 2026-05-03
     min_confidence: float = 0.50
+    # Fallback chain order for tier 2's RAG synthesis call, tried
+    # left-to-right — first backend with a valid API key that succeeds
+    # wins. Groq stays primary here (grounded synthesis benefits from
+    # Groq's speed). Same PROVIDER order as GenerativeTierConfig.
+    # backend_order, but tier 2 and tier 3 authenticate with DIFFERENT
+    # Groq keys (Secrets.groq_api_key vs .groq_api_key_tier3) so they
+    # draw from independent 12,000 TPM pools instead of sharing one —
+    # see Secrets.groq_api_key_tier3's docstring for the full history
+    # (a same-key approach, then a different-provider-primary approach,
+    # both tried and superseded by this one).
+    backend_order: list[Literal["groq", "gemini", "local"]] = Field(
+        default_factory=lambda: ["groq", "gemini", "local"]
+    )
+    # How many top reranked chunks tier 2's RAG synthesis call is grounded
+    # in. See backend/tiers/retrieval_tier.py's _build_synthesis_prompt().
+    synthesis_top_k: int = 5
+    # Same model as generative_tier.groq_model (70B) — NOT a deliberately
+    # smaller/cheaper model. It used to be llama-3.1-8b-instant for a
+    # cost-aware cascade, but scripts/eval_synthesis_latency.py's ablation
+    # (2026-08-11) measured 56% of calls rate-limited outright at 5s
+    # pacing on that model's 6000 TPM free-tier budget, independent of
+    # synthesis_top_k/synthesis_chunk_chars — not viable for a demo-able
+    # system. The 70B model's req/min-based limit doesn't throttle at
+    # this traffic pattern.
+    synthesis_model: str = "llama-3.3-70b-versatile"
+    # Per-chunk character cap applied to synthesis context. None (default)
+    # means no truncation — full ~2048-char chunks as scraped, which is
+    # the CURRENT behaviour, kept as the default until a value is chosen
+    # deliberately. Context size (synthesis_top_k x chunk length) directly
+    # drives synthesis LLM latency — see scripts/eval_synthesis_latency.py,
+    # which measures the tradeoff across values; don't guess one here.
+    synthesis_chunk_chars: int | None = None
 
 
 class GenerativeTierConfig(BaseModel):
     enabled: bool = True
-    backend: Literal["groq", "gemini", "local"] = "groq"
+    # Fallback chain order for tier 3, tried left-to-right — first backend
+    # with a valid API key that succeeds wins. Groq primary — fast,
+    # reliable, same provider tier 2 uses, but via a SEPARATE key
+    # (Secrets.groq_api_key_tier3, see GenerativeTier.__init__) so tier 2
+    # and tier 3 draw from independent 12,000 TPM pools instead of
+    # sharing one.
+    #
+    # History: until 2026-08-11 both tiers used the SAME Groq key and
+    # silently shared one TPM budget — heavy tier 2 traffic could starve
+    # tier 3's capacity and vice versa (confirmed via scripts/run_eval.py:
+    # 9/20 queries fell back to Gemini in one unpaced run). First fix
+    # attempt reordered tier 3 to Gemini-primary instead — that reduced
+    # Groq contention but traded it for a worse problem: Gemini's free
+    # tier is request-count limited (5 req/min, 20 req/day observed),
+    # fine as an occasional fallback but exhausted almost immediately
+    # once it became a tier's PRIMARY under real traffic (3/8 tier-3
+    # queries fell back to Groq from Gemini's OWN 429s in one 20-query,
+    # zero-pacing run) — partially recreating the contention it was
+    # meant to fix. Two independent Groq keys (this config) is the fix
+    # actually being relied on now; Gemini stays in the chain purely as
+    # a fallback-of-last-resort before local Qwen, never as a primary.
+    backend_order: list[Literal["groq", "gemini", "local"]] = Field(
+        default_factory=lambda: ["groq", "gemini", "local"]
+    )
     groq_model: str = "llama-3.3-70b-versatile"
-    gemini_model: str = "gemini-2.0-flash"
+    # gemini-2.0-flash was retired (API 404s: "no longer available").
+    # gemini-2.5-flash, though listed by the API as a valid model name,
+    # ALSO 404s for this account ("no longer available to new users") —
+    # confirmed live 2026-08-11. gemini-flash-latest is a Google-managed
+    # alias that tracks their current flash model, chosen specifically
+    # so a version-pinned name can't silently go stale like this again.
+    # See llm_client.py's GeminiClient docstring for the full story,
+    # including a second, separate issue it surfaced (thinking-token
+    # budget truncating answers) that's fixed in generate(), not here.
+    gemini_model: str = "gemini-flash-latest"
     local_model: str = "Qwen/Qwen2.5-1.5B-Instruct"
     max_tokens: int = 512
     temperature: float = 0.2
@@ -99,6 +163,15 @@ class Secrets(BaseSettings):
     )
 
     groq_api_key: str = ""
+    # Separate Groq key for tier 3 (generative_tier.py) — see
+    # GROQ_API_KEY_TIER3's comment in .env.example. Independent 12,000
+    # TPM pool from tier 2's groq_api_key above, so the two tiers stop
+    # competing for one shared budget. Empty by default: GenerativeTier
+    # falls back to groq_api_key (shared) when this isn't set, so a
+    # fresh clone with only one Groq key still works — just without the
+    # isolation benefit. See GenerativeTier.__init__ for the fallback
+    # and its one-time startup warning.
+    groq_api_key_tier3: str = ""
     google_api_key: str = ""
     hf_token: str = ""
 

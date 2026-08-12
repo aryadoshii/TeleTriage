@@ -21,10 +21,33 @@ Unified LLM client interface for the Generative Tier.
       c) Cost is near-zero: the retrieval already ran, so we're just re-using
          the candidates that were computed but didn't cross the bar.
 
-    The implementation contract: callers populate Query.metadata["retrieved_context"]
-    with a list of {"question": str, "answer": str} dicts before calling
-    GenerativeTier.answer().  The router (Phase 4+) should wire this up.
-    When the field is absent the tier generates from scratch — graceful degradation.
+    WIRED (as of Phase 4): the implementation contract is callers populate
+    Query.metadata["retrieved_context"] with a list of dicts (at minimum
+    "question"/"answer" — build_user_prompt() reads only those two keys)
+    before calling GenerativeTier.answer(). When the field is absent the
+    tier generates from scratch — graceful degradation.
+
+    How it's actually wired, end to end:
+      1. backend/tiers/retrieval_tier.py reranks with top_k=3 (not just
+         the top_1 it needs to answer with) and packages all 3 into
+         TierResult.details["candidates"] as {"doc_id", "question",
+         "answer", "logit"} dicts, per-answer capped at 800 chars — on
+         BOTH the low-confidence delegation path and the confident-answer
+         path (the latter purely for eval/observability; the router never
+         gets a chance to forward it downstream in that case, since the
+         cascade already stopped).
+      2. backend/router.py's route() loop reads
+         result.details.get("candidates") after each tier that delegates,
+         accumulates it, and — because Query is a frozen Pydantic model
+         and can't be mutated mid-cascade — constructs a NEW Query with
+         metadata={**metadata, "retrieved_context": candidates} before
+         calling the next tier. The ORIGINAL Query object (whatever the
+         caller submitted) is preserved separately and is what ends up on
+         the final Response — the decorated, mid-cascade version never
+         escapes the router.
+      3. GenerativeTier.answer() reads query.metadata.get("retrieved_context", [])
+         (unchanged — this file's contract was already correct; only the
+         producer side was missing) and passes it to build_user_prompt().
 
     Token budget:  context is truncated to MAX_CONTEXT_CHARS characters
     (roughly 500 tokens) so it never crowds out the user query or the
@@ -90,11 +113,18 @@ Retry logic — exponential backoff:
   thundering-herd when multiple clients retry simultaneously.
 
 Backend fallback chain:
-  Groq → Gemini → LocalQwen.  FallbackClient tries each in order.
-  Any exception from a backend → log it and try the next one.
-  LocalQwen always succeeds (if the model file is downloaded), so it
-  acts as the ultimate safety net.  The tradeoff: 1.5B parameter model
-  vs 70B — quality will be lower, but an answer is better than a crash.
+  FallbackClient tries backends in whatever order make_llm_client()'s
+  `backend_order` param specifies — see that function's docstring.
+  NOT a single fixed Groq → Gemini → LocalQwen chain: tier 2 (RAG
+  synthesis) and tier 3 (closed-book fallback) are configured with
+  DIFFERENT primaries (config.yaml's retrieval_tier.backend_order vs
+  generative_tier.backend_order) specifically so they draw from separate
+  provider quotas instead of silently competing for one shared budget.
+  Any exception from a backend → log it and try the next one in that
+  tier's order. LocalQwen always succeeds (if the model file is
+  downloaded), so as long as it's included in the order it acts as the
+  ultimate safety net.  The tradeoff: 1.5B parameter model vs 70B —
+  quality will be lower, but an answer is better than a crash.
 """
 from __future__ import annotations
 
@@ -131,6 +161,14 @@ class GenerationOutput:
     finish_reason: str      # "stop", "length", or backend-specific value
     model: str              # model name as reported by the backend
     backend: str            # "groq", "gemini", or "local"
+    # Number of GroqClient-level retries this call needed before
+    # succeeding (0 = succeeded on the first attempt). See GroqClient's
+    # docstring — this used to be unmeasurable: the groq SDK's OWN
+    # internal retry (its default max_retries=2) absorbed 429s silently,
+    # so a call could take 20+ seconds with zero signal anywhere that a
+    # retry happened. Always 0 for Gemini/local for now — only GroqClient
+    # has ever exhibited this specific silent-retry behaviour.
+    retry_count: int = 0
     raw_response: Any = field(default=None, repr=False)  # for debugging
 
 
@@ -179,6 +217,12 @@ class GroqClient:
 
     Free tier: 30 req/min, 500k tokens/day on llama-3.3-70b-versatile.
     Fastest inference of the three backends (~200–400 ms for 512 tokens).
+    NOTE: other models on this same account can have MUCH lower limits —
+    llama-3.1-8b-instant (tier 2's synthesis model) was measured at just
+    6000 TPM (tokens per minute) via the x-ratelimit-limit-tokens response
+    header. That's roughly 2-3 of tier 2's synthesis calls before hitting
+    the ceiling, not the 30 req/min figure above (which is a per-model,
+    per-request limit, not a token budget, and doesn't apply here).
 
     Retry policy:
       - InternalServerError / APIConnectionError / APITimeoutError:
@@ -186,6 +230,20 @@ class GroqClient:
       - RateLimitError: not transient — raise immediately so FallbackClient
         can switch to the next backend.
       - AuthenticationError: misconfigured key — raise immediately.
+
+    CONFIRMED BUG (fixed here): the `groq` SDK constructs its underlying
+    HTTP client with max_retries=2 BY DEFAULT. That's a SEPARATE retry
+    layer, below and invisible to the retry loop in generate() below — a
+    429 hit inside the SDK's own transport gets silently retried there
+    (honouring the server's Retry-After header) before EVER raising an
+    exception this class could see, log, or count. Measured effect: an
+    identical call repeated 4x took 442ms / 374ms / 8458ms / 21533ms, with
+    NO warning logged anywhere, and GenerationOutput indistinguishable
+    from a normal fast call — meaning TierResult.latency_sec in
+    production could be silently inflated by 20-50x with zero diagnostic
+    signal. Passing max_retries=0 below disables the SDK's hidden retry
+    entirely, so every retry that happens is the one in generate() below —
+    logged via logger.warning AND counted in GenerationOutput.retry_count.
     """
 
     MAX_RETRIES = 3
@@ -195,7 +253,10 @@ class GroqClient:
         if not api_key:
             raise BackendUnavailableError("GroqClient: api_key is empty")
         from groq import Groq
-        self._client = Groq(api_key=api_key)
+        # max_retries=0: see "CONFIRMED BUG" above. Without this, a 429
+        # can be silently retried by the SDK's own transport layer before
+        # this class ever gets a chance to see, log, or count it.
+        self._client = Groq(api_key=api_key, max_retries=0)
         self._model = model
 
     def generate(
@@ -224,16 +285,28 @@ class GroqClient:
                     max_tokens=max_tokens,
                     temperature=temperature,
                 )
+                if attempt > 0:
+                    logger.warning(
+                        "Groq call succeeded after %d retry/retries (model=%s).",
+                        attempt, self._model,
+                    )
                 return GenerationOutput(
                     text=completion.choices[0].message.content or "",
                     tokens_used=completion.usage.total_tokens if completion.usage else 0,
                     finish_reason=completion.choices[0].finish_reason or "unknown",
                     model=self._model,
                     backend="groq",
+                    retry_count=attempt,
                     raw_response=completion,
                 )
             except RateLimitError as exc:
-                # Rate limit → don't retry this backend, let FallbackClient switch
+                # Rate limit → don't retry this backend, let FallbackClient
+                # switch. (exc carries a retry-after hint from Groq, e.g.
+                # "Rate limit reached... limit 6000... try again in 12s" —
+                # not consumed here; a smarter same-backend wait-and-retry
+                # using that value would be a reasonable future change,
+                # but isn't what was asked for — this preserves the
+                # existing fallback-on-rate-limit behaviour unchanged.)
                 raise BackendUnavailableError(f"Groq rate limit: {exc}") from exc
             except (InternalServerError, APIConnectionError, APITimeoutError) as exc:
                 last_exc = exc
@@ -255,10 +328,28 @@ class GroqClient:
 
 class GeminiClient:
     """
-    Google Gemini 2.0 Flash via the google-genai SDK (v1+).
+    Google Gemini (flash tier) via the google-genai SDK (v1+).
 
-    Free tier: 15 req/min, 1M tokens/day on gemini-2.0-flash.
     Uses the new google.genai package (google-generativeai is deprecated).
+
+    NOTE: this previously defaulted to gemini-2.0-flash, which was
+    retired — confirmed live (2026-08-11): the API returns 404 "This
+    model models/gemini-2.0-flash is no longer available." The obvious
+    fix (pin a current dated model like gemini-2.5-flash) was ALSO
+    confirmed broken for this account specifically: 404 "no longer
+    available to new users" — client.models.list() listing a model does
+    not mean generate_content will accept it for a given API key/account
+    tier. Version-pinned model names on free-tier Gemini are not
+    reliably stable; gemini-flash-latest (a Google-managed alias that
+    always points at their current flash model) is used instead
+    specifically to avoid re-hitting this exact class of bug. Tradeoff:
+    behavior can drift between demo runs if Google repoints the alias —
+    accepted here in favor of not silently 404ing again later.
+
+    Newer Gemini models default to spending some of max_output_tokens on
+    internal "thinking" before the visible answer — see the
+    thinking_config comment in generate() below; this cost real answer
+    truncation before it was set explicitly.
 
     Retry policy: ServerError (5xx) → retry with backoff.
     ClientError (4xx including quota) → raise immediately for fallback.
@@ -267,7 +358,7 @@ class GeminiClient:
     MAX_RETRIES = 3
     BASE_WAIT_SEC = 1.0
 
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash") -> None:
+    def __init__(self, api_key: str, model: str = "gemini-flash-latest") -> None:
         if not api_key:
             raise BackendUnavailableError("GeminiClient: api_key is empty")
         from google import genai
@@ -297,6 +388,20 @@ class GeminiClient:
                         system_instruction=system,
                         max_output_tokens=max_tokens,
                         temperature=temperature,
+                        # Gemini's newer models "think" before answering,
+                        # and thinking tokens are drawn from the SAME
+                        # max_output_tokens budget as the visible answer
+                        # (no separate allowance) — confirmed live
+                        # (2026-08-11): at the default model + this file's
+                        # 512-token production budget, thinking consumed
+                        # the entire budget and the visible answer came
+                        # back truncated to ~80 characters with
+                        # finish_reason=MAX_TOKENS, not an error, just a
+                        # silently useless response. MINIMAL keeps enough
+                        # budget free for a real answer at 512 tokens.
+                        thinking_config=gtypes.ThinkingConfig(
+                            thinking_level=gtypes.ThinkingLevel.MINIMAL
+                        ),
                     ),
                 )
                 text = response.text or ""
@@ -338,17 +443,98 @@ class GeminiClient:
 
 # ─── Local Qwen backend ───────────────────────────────────────────────────────
 
+# Default subprocess timeout for local inference. Generous because CPU
+# inference (the common case — most dev/deploy environments here have no
+# GPU) can genuinely take tens of seconds, on top of a cold model load
+# every call (see LocalQwenClient's docstring for why nothing persists
+# between calls). Configurable per-instance via LocalQwenClient(timeout_sec=...).
+_LOCAL_QWEN_TIMEOUT_SEC = 90.0
+
+# Runs in an ISOLATED subprocess (via `sys.executable -c _LOCAL_QWEN_WORKER_SCRIPT`)
+# — same invocation shape as backend/evaluation/evaluator.py's
+# _bertscore_subprocess(): stdin JSON in, stdout JSON out, nothing else on
+# stdout. Kept as one big inline script (not a separate worker .py file) to
+# match that existing precedent exactly — this codebase should have ONE
+# pattern for process-isolated model inference, not two.
+_LOCAL_QWEN_WORKER_SCRIPT = """
+import json
+import sys
+
+import torch
+torch.multiprocessing.set_sharing_strategy("file_system")
+from transformers import pipeline
+
+d = json.loads(sys.stdin.read())
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+pipe = pipeline(
+    "text-generation",
+    model=d["model_name"],
+    device_map=device,
+    dtype=torch.float16 if device == "cuda" else torch.float32,
+)
+
+messages = [
+    {"role": "system", "content": d["system"]},
+    {"role": "user", "content": d["user"]},
+]
+
+temperature = d["temperature"]
+result = pipe(
+    messages,
+    max_new_tokens=d["max_tokens"],
+    temperature=max(temperature, 1e-4),  # pipeline rejects exactly 0
+    do_sample=temperature > 0.05,
+)
+
+# pipeline returns: [{"generated_text": [{"role": ..., "content": ...}, ...]}]
+generated = result[0]["generated_text"]
+assistant_turn = generated[-1]
+text = assistant_turn["content"] if isinstance(assistant_turn, dict) else str(assistant_turn)
+
+print(json.dumps({"text": text}))
+"""
+
 
 class LocalQwenClient:
     """
-    Local Qwen2.5-1.5B-Instruct via HuggingFace transformers.
+    Local Qwen2.5-1.5B-Instruct via HuggingFace transformers, run in an
+    ISOLATED SUBPROCESS for every call — never loaded in this process.
+
+    WHY SUBPROCESS ISOLATION (not lazy-loading in-process, memory limits,
+    or torch.multiprocessing sharing tricks): this is the last-resort
+    backend, reached only after Groq AND Gemini have both failed — which
+    is exactly when tier 2's BGE-small embedder and bge-reranker-base
+    cross-encoder are typically ALREADY loaded in this same process (RAG
+    synthesis loads both before ever calling an LLM). Loading a THIRD
+    PyTorch model (Qwen) in-process alongside them reproduces the exact
+    multi-model coexistence conflict that backend/evaluation/evaluator.py's
+    _bertscore_subprocess() already isolates BERTScore against — see that
+    method's docstring. This isn't theoretical: the in-process version of
+    this class SIGSEGV'd during a real eval run (2026-08-12) when Groq and
+    Gemini were both exhausted and Qwen loaded in-process next to the
+    already-loaded embedder/reranker. Subprocess isolation is the fix that
+    already works in this codebase for this exact failure mode — attempts
+    to make three PyTorch models coexist safely in one process are not
+    revisited here because that's the thing already proven not to work
+    reliably.
+
+    Tradeoff: every call now pays real process-spawn + cold-model-load
+    overhead (roughly 1-3s just to start Python and reload the model,
+    before inference even begins) since nothing persists between calls —
+    that's the whole point: the subprocess's memory, including the loaded
+    model, is torn down when it exits, so it can never coexist with
+    whatever's loaded in the parent process. Acceptable specifically
+    BECAUSE this only fires as a last resort (after Groq AND Gemini both
+    fail), not on the hot path. Do not "optimize" this back to a
+    persistent in-process pipeline without re-solving the coexistence
+    crash first.
 
     No API key required — runs entirely on-device.  Model weights (~3 GB)
-    are downloaded from HuggingFace Hub on first use and cached locally.
-
-    The model is loaded LAZILY (not at __init__ time) to avoid a 3-second
-    startup cost when the cloud backends are available.  Once loaded, the
-    pipeline object is kept alive for the duration of the process.
+    are downloaded from HuggingFace Hub on first use and cached locally
+    (by the subprocess's transformers/huggingface_hub install, same cache
+    dir as any other process on the machine — the isolation is about
+    process/memory boundaries, not the on-disk model cache).
 
     Quality note:
       1.5B parameters vs 70B (Groq Llama) — noticeably lower quality for
@@ -356,24 +542,13 @@ class LocalQwenClient:
       or when all cloud backends fail, not for primary production traffic.
     """
 
-    def __init__(self, model_name: str = "Qwen/Qwen2.5-1.5B-Instruct") -> None:
+    def __init__(
+        self,
+        model_name: str = "Qwen/Qwen2.5-1.5B-Instruct",
+        timeout_sec: float = _LOCAL_QWEN_TIMEOUT_SEC,
+    ) -> None:
         self._model_name = model_name
-        self._pipeline: Any = None  # loaded on first call
-
-    def _load_pipeline(self) -> None:
-        """Download (if needed) and load the model into a text-generation pipeline."""
-        import torch
-        from transformers import pipeline
-
-        logger.info("Loading local model %s (may take a few seconds)…", self._model_name)
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        self._pipeline = pipeline(
-            "text-generation",
-            model=self._model_name,
-            device_map=device,
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        )
-        logger.info("Local model loaded on %s.", device)
+        self._timeout_sec = timeout_sec
 
     def generate(
         self,
@@ -382,31 +557,49 @@ class LocalQwenClient:
         max_tokens: int = 512,
         temperature: float = 0.2,
     ) -> GenerationOutput:
-        if self._pipeline is None:
-            self._load_pipeline()
+        import json
+        import subprocess
+        import sys
 
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ]
+        data = {
+            "model_name": self._model_name,
+            "system": system,
+            "user": user,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
 
-        # Qwen2.5-Instruct supports the chat template natively via pipeline
-        result = self._pipeline(
-            messages,
-            max_new_tokens=max_tokens,
-            temperature=max(temperature, 1e-4),  # pipeline rejects exactly 0
-            do_sample=temperature > 0.05,
-        )
+        # Any failure here is mapped to BackendUnavailableError — the same
+        # exception GroqClient/GeminiClient raise on failure — so
+        # FallbackClient's existing "any exception -> try the next
+        # backend" handling doesn't need to know a subprocess is involved
+        # at all; the boundary is invisible above this method.
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", _LOCAL_QWEN_WORKER_SCRIPT],
+                input=json.dumps(data),
+                capture_output=True,
+                text=True,
+                timeout=self._timeout_sec,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise BackendUnavailableError(
+                f"LocalQwen: subprocess timed out after {self._timeout_sec}s"
+            ) from exc
 
-        # pipeline returns: [{"generated_text": [{"role": ..., "content": ...}, ...]}]
-        generated = result[0]["generated_text"]
-        # The last message is the assistant's response
-        assistant_turn = generated[-1]
-        text = (
-            assistant_turn["content"]
-            if isinstance(assistant_turn, dict)
-            else str(assistant_turn)
-        )
+        if result.returncode != 0:
+            raise BackendUnavailableError(
+                f"LocalQwen: subprocess exited {result.returncode}: "
+                f"{result.stderr.strip()[-2000:]}"
+            )
+
+        try:
+            parsed = json.loads(result.stdout.strip())
+            text = parsed["text"]
+        except (json.JSONDecodeError, KeyError) as exc:
+            raise BackendUnavailableError(
+                f"LocalQwen: subprocess produced malformed output: {exc}"
+            ) from exc
 
         return GenerationOutput(
             text=text,
@@ -428,14 +621,24 @@ class FallbackClient:
     the error is logged and the next backend is attempted.  If all backends
     fail, AllBackendsFailedError is raised with the full failure log.
 
-    This is the ONLY client that GenerativeTier should instantiate directly.
-    Individual backend clients are used for unit testing in isolation.
+    This is used by BOTH tier 2 (retrieval_tier.py's RAG synthesis) and
+    tier 3 (generative_tier.py) — each with its own instance and its own
+    backend_order (see make_llm_client()'s docstring for why they're kept
+    separate). Individual backend clients are used for unit testing in
+    isolation.
     """
 
-    def __init__(self, clients: list[LLMClient]) -> None:
+    def __init__(self, clients: list[LLMClient], name: str = "llm") -> None:
         if not clients:
             raise ValueError("FallbackClient requires at least one backend client.")
         self._clients = clients
+        # Identifies which tier's chain this is in logs — e.g. "tier2-synthesis"
+        # vs "tier3-generative". Previously this warning was hardcoded to say
+        # "Generative tier" unconditionally, which became actively misleading
+        # once tier 2 also started using FallbackClient: a tier 2 fallback
+        # event logged as if it were tier 3's, making it look like tier 3 was
+        # still Groq-primary when debugging exactly this kind of contention.
+        self._name = name
 
     def generate(
         self,
@@ -457,8 +660,8 @@ class FallbackClient:
                 if failures:
                     # We succeeded on a fallback — log so ops knows the primary failed
                     logger.warning(
-                        "Generative tier: primary backend(s) failed (%s); "
-                        "answered via %s.",
+                        "%s: primary backend(s) failed (%s); answered via %s.",
+                        self._name,
                         "; ".join(failures),
                         output.backend,
                     )
@@ -466,10 +669,10 @@ class FallbackClient:
             except Exception as exc:
                 msg = f"{type(client).__name__}: {exc}"
                 failures.append(msg)
-                logger.warning("Backend failed, trying next: %s", msg)
+                logger.warning("%s: backend failed, trying next: %s", self._name, msg)
 
         raise AllBackendsFailedError(
-            f"All {len(self._clients)} LLM backend(s) failed:\n"
+            f"All {len(self._clients)} LLM backend(s) failed ({self._name}):\n"
             + "\n".join(f"  {f}" for f in failures)
         )
 
@@ -481,19 +684,51 @@ class FallbackClient:
 # ─── Factory ──────────────────────────────────────────────────────────────────
 
 
+_DEFAULT_BACKEND_ORDER = ("groq", "gemini", "local")
+
+
 def make_llm_client(
     groq_api_key: str = "",
     google_api_key: str = "",
     groq_model: str = "llama-3.3-70b-versatile",
-    gemini_model: str = "gemini-2.0-flash",
+    gemini_model: str = "gemini-flash-latest",
     local_model: str = "Qwen/Qwen2.5-1.5B-Instruct",
+    backend_order: list[str] | tuple[str, ...] = _DEFAULT_BACKEND_ORDER,
+    client_name: str = "llm",
 ) -> FallbackClient:
     """
-    Build a FallbackClient with all available backends in priority order:
-      Groq (if groq_api_key set) → Gemini (if google_api_key set) → Local Qwen.
+    Build a FallbackClient trying backends in `backend_order`, left to right.
 
-    LocalQwenClient is always included as the last-resort fallback.
-    Cloud backends are only added when their API key is non-empty.
+    `backend_order` is authoritative for BOTH which backends are included
+    AND the order they're tried in — a name absent from the list is
+    excluded even if its API key is set (e.g. `["gemini", "local"]`
+    deliberately disables Groq for a tier without touching .env). Cloud
+    backends (groq/gemini) are additionally skipped if their API key is
+    empty, or if construction fails (missing SDK, bad key format, etc.);
+    "local" (LocalQwenClient) needs no key and is only skipped if omitted
+    from `backend_order`.
+
+    WHY THIS PARAMETER EXISTS (not just per-tier model names): tier 2's
+    RAG synthesis (backend/tiers/retrieval_tier.py) and tier 3's
+    closed-book fallback (backend/tiers/generative_tier.py) both used to
+    default to Groq as primary. That meant two supposedly-independent
+    cascade stages silently shared ONE Groq TPM budget — heavy tier 2
+    traffic could starve tier 3's fallback capacity and vice versa. Not a
+    rate-limit inconvenience; an architectural flaw. Confirmed via
+    scripts/run_eval.py (2026-08-11): 9/20 queries fell back to Gemini in
+    one unpaced run purely from both tiers hitting
+    llama-3.3-70b-versatile's 12,000 TPM limit together. Fix: give each
+    tier its OWN `backend_order` in config.yaml (retrieval_tier.
+    backend_order, generative_tier.backend_order) so their primaries draw
+    from genuinely separate quotas — Groq stays tier 2's primary, Gemini
+    becomes tier 3's, each keeping the other as ITS OWN secondary
+    fallback rather than a shared front-line resource.
+
+    client_name: identifies this chain in logs (e.g. "tier3-generative" vs
+    "tier2-synthesis") — see FallbackClient's docstring for why this
+    matters: its fallback/failure warnings used to be hardcoded to say
+    "Generative tier" unconditionally, which became actively misleading
+    once tier 2 also started building a FallbackClient.
 
     Usage::
 
@@ -505,29 +740,51 @@ def make_llm_client(
             groq_model=cfg.generative_tier.groq_model,
             gemini_model=cfg.generative_tier.gemini_model,
             local_model=cfg.generative_tier.local_model,
+            backend_order=cfg.generative_tier.backend_order,
+            client_name="tier3-generative",
         )
     """
-    clients: list[LLMClient] = []
+    available: dict[str, LLMClient] = {}
 
     if groq_api_key:
         try:
-            clients.append(GroqClient(api_key=groq_api_key, model=groq_model))
-            logger.debug("Groq backend registered (model: %s).", groq_model)
+            available["groq"] = GroqClient(api_key=groq_api_key, model=groq_model)
         except Exception as exc:
             logger.warning("Could not initialise Groq backend: %s", exc)
 
     if google_api_key:
         try:
-            clients.append(GeminiClient(api_key=google_api_key, model=gemini_model))
-            logger.debug("Gemini backend registered (model: %s).", gemini_model)
+            available["gemini"] = GeminiClient(api_key=google_api_key, model=gemini_model)
         except Exception as exc:
             logger.warning("Could not initialise Gemini backend: %s", exc)
 
-    # LocalQwen is always appended — no key required, just disk space
-    clients.append(LocalQwenClient(model_name=local_model))
-    logger.debug("LocalQwen backend registered (model: %s).", local_model)
+    # LocalQwen needs no key — only ever skipped by omitting it from
+    # backend_order (see below).
+    available["local"] = LocalQwenClient(model_name=local_model)
 
-    return FallbackClient(clients)
+    clients: list[LLMClient] = []
+    for backend_name in backend_order:
+        client = available.pop(backend_name, None)
+        if client is None:
+            logger.warning(
+                "%s: backend_order specifies %r but it's not available "
+                "(missing API key, or already listed twice) — skipping.",
+                client_name, backend_name,
+            )
+            continue
+        clients.append(client)
+        logger.debug(
+            "%s: %s backend registered (position %d in backend_order).",
+            client_name, backend_name, len(clients),
+        )
+
+    if not clients:
+        raise ValueError(
+            f"make_llm_client({client_name!r}): backend_order {list(backend_order)!r} "
+            f"produced no usable backends — check API keys are set for at least one of them."
+        )
+
+    return FallbackClient(clients, name=client_name)
 
 
 # ─── Context helpers ─────────────────────────────────────────────────────────
@@ -537,9 +794,12 @@ def build_user_prompt(query_text: str, retrieved_context: list[dict]) -> str:
     """
     Construct the user-turn prompt, optionally grounding it with retrieved docs.
 
-    retrieved_context: list of {"question": str, "answer": str} dicts from
-    RAG candidates that did not cross the confidence threshold but still carry
-    relevant signal.  See design decision (1) above.
+    retrieved_context: list of dicts from RAG candidates that did not cross
+    the confidence threshold but still carry relevant signal — only the
+    "question" and "answer" keys are read here; the "doc_id"/"logit" keys
+    RetrievalTier._build_candidates() also includes are ignored (they're
+    for eval/observability, not prompt construction). See design
+    decision (1) above.
 
     Context is truncated to MAX_CONTEXT_CHARS to respect token budgets.
     """
