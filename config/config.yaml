@@ -42,8 +42,6 @@ retrieval_tier:
   dense_top_k: 20
   # After RRF, how many to send to the reranker (more = slower but better)
   rerank_top_k: 10
-  # Final top-k returned (usually 1 for this use case)
-  final_top_k: 1
   # RRF constant - 60 is the standard value from the original RRF paper
   rrf_k: 60
   # Reranker score is a logit; > 0 typically means "relevant".

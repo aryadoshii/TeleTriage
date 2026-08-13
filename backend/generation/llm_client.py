@@ -109,8 +109,14 @@ System vs user prompts:
 Retry logic — exponential backoff:
   Transient failures (5xx, connection resets) are common on free API tiers.
   Naive immediate retry hammers the server and burns rate-limit quota.
-  Exponential backoff: wait 1s, 2s, 4s... caps at 10s.  Jitter prevents
-  thundering-herd when multiple clients retry simultaneously.
+  Actual behaviour (GroqClient, GeminiClient — same MAX_RETRIES/
+  BASE_WAIT_SEC pattern in both): MAX_RETRIES=3 attempts total, waiting
+  BASE_WAIT_SEC * 2**attempt between them — 1s after the first failure,
+  2s after the second. The sleep is guarded (`if attempt < MAX_RETRIES -
+  1`) so the third, final attempt never sleeps before giving up — there's
+  nothing left to retry into once the loop is about to exit, so a 4s wait
+  there would just add latency with no retry to show for it. No jitter,
+  no explicit time cap: the ceiling is MAX_RETRIES itself, not a duration.
 
 Backend fallback chain:
   FallbackClient tries backends in whatever order make_llm_client()'s
@@ -711,18 +717,33 @@ def make_llm_client(
     WHY THIS PARAMETER EXISTS (not just per-tier model names): tier 2's
     RAG synthesis (backend/tiers/retrieval_tier.py) and tier 3's
     closed-book fallback (backend/tiers/generative_tier.py) both used to
-    default to Groq as primary. That meant two supposedly-independent
-    cascade stages silently shared ONE Groq TPM budget — heavy tier 2
-    traffic could starve tier 3's fallback capacity and vice versa. Not a
-    rate-limit inconvenience; an architectural flaw. Confirmed via
-    scripts/run_eval.py (2026-08-11): 9/20 queries fell back to Gemini in
-    one unpaced run purely from both tiers hitting
-    llama-3.3-70b-versatile's 12,000 TPM limit together. Fix: give each
-    tier its OWN `backend_order` in config.yaml (retrieval_tier.
-    backend_order, generative_tier.backend_order) so their primaries draw
-    from genuinely separate quotas — Groq stays tier 2's primary, Gemini
-    becomes tier 3's, each keeping the other as ITS OWN secondary
-    fallback rather than a shared front-line resource.
+    default to Groq as primary, authenticated with the SAME key. That
+    meant two supposedly-independent cascade stages silently shared ONE
+    Groq TPM budget — heavy tier 2 traffic could starve tier 3's fallback
+    capacity and vice versa. Not a rate-limit inconvenience; an
+    architectural flaw. Confirmed via scripts/run_eval.py (2026-08-11):
+    9/20 queries fell back to Gemini in one unpaced run purely from both
+    tiers hitting llama-3.3-70b-versatile's 12,000 TPM limit together.
+
+    First fix attempt: give each tier its own `backend_order`, with tier 3
+    reordered to Gemini-primary — same key-per-tier idea, but decoupling
+    by PROVIDER instead. That measurably reduced Groq-side contention but
+    traded it for a worse problem: Gemini's free tier turned out to be
+    request-count limited (5 req/min, 20 req/day observed), fine as an
+    occasional fallback but exhausted almost immediately once it became a
+    tier's PRIMARY under real traffic — partially recreating the
+    contention it was meant to fix. Reverted.
+
+    Actual shipped fix: both tiers keep `backend_order` = [groq, gemini,
+    local] (same provider order), but authenticate with DIFFERENT Groq
+    keys — tier 2 uses Secrets.groq_api_key, tier 3 uses Secrets.
+    groq_api_key_tier3 (selected at the GenerativeTier.__init__ call
+    site, not inside this function — see its docstring). Two keys under
+    Groq draw from independent TPM pools, so tier 2 and tier 3 stop
+    competing for one budget without giving up Groq's speed/reliability
+    as the primary for both. Gemini and local remain each tier's OWN
+    fallback-of-last-resort behind Groq, never a primary. See config.yaml's
+    generative_tier.backend_order comment for the full dated history.
 
     client_name: identifies this chain in logs (e.g. "tier3-generative" vs
     "tier2-synthesis") — see FallbackClient's docstring for why this
@@ -730,12 +751,14 @@ def make_llm_client(
     "Generative tier" unconditionally, which became actively misleading
     once tier 2 also started building a FallbackClient.
 
-    Usage::
+    Usage (tier 3 — note groq_api_key_tier3, NOT groq_api_key; see
+    GenerativeTier.__init__ for the real fallback-to-shared-key logic
+    omitted here for brevity)::
 
         from backend.config import get_config
         cfg = get_config()
         client = make_llm_client(
-            groq_api_key=cfg.secrets.groq_api_key,
+            groq_api_key=cfg.secrets.groq_api_key_tier3 or cfg.secrets.groq_api_key,
             google_api_key=cfg.secrets.google_api_key,
             groq_model=cfg.generative_tier.groq_model,
             gemini_model=cfg.generative_tier.gemini_model,

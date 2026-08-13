@@ -544,16 +544,27 @@ def _make_minhash(text: str) -> MinHash:
     return m
 
 
-def deduplicate(chunks: list[str], threshold: float) -> tuple[list[str], int]:
+def deduplicate(chunks: list[str], threshold: float) -> tuple[list[int], int]:
     """
     Remove chunks whose Jaccard similarity to any already-kept chunk
-    exceeds threshold.  Returns (kept_chunks, n_dropped).
+    exceeds threshold.  Returns (kept_indices, n_dropped) — indices into
+    the original `chunks` list, NOT the text values themselves.
+
+    Returning indices (not text) is deliberate: the caller rebuilds the
+    final KB by indexing directly into its source list with these, so
+    two chunks that happen to share identical text (e.g. a boilerplate
+    note repeated verbatim elsewhere) can never cause one to be silently
+    re-included via the other. A prior version of the caller matched
+    kept chunks back to source objects by text value + id(), which
+    reintroduced 142 exact-duplicate chunks that this function correctly
+    dropped — see git history. Returning indices makes that class of bug
+    structurally impossible, not just patched.
 
     MinHash LSH complexity: O(n) insert + O(1) query per chunk,
     vs O(n²) for naive pairwise comparison.
     """
     lsh = MinHashLSH(threshold=threshold, num_perm=MINHASH_NUM_PERM)
-    kept: list[str] = []
+    kept_indices: list[int] = []
     dropped = 0
 
     for i, chunk in enumerate(chunks):
@@ -562,9 +573,9 @@ def deduplicate(chunks: list[str], threshold: float) -> tuple[list[str], int]:
             dropped += 1
         else:
             lsh.insert(str(i), m)
-            kept.append(chunk)
+            kept_indices.append(i)
 
-    return kept, dropped
+    return kept_indices, dropped
 
 
 # ─── Main pipeline ────────────────────────────────────────────────────────────
@@ -729,28 +740,19 @@ def main(
     console.rule("Deduplication")
     texts = [d["answer"] for d in all_chunks]
     console.print(f"  Running MinHash LSH on {len(texts)} chunks (threshold={dedup_threshold})…")
-    kept_texts, n_dropped = deduplicate(texts, dedup_threshold)
+    kept_indices, n_dropped = deduplicate(texts, dedup_threshold)
     dedup_rate = n_dropped / len(texts) if texts else 0.0
 
-    # Rebuild docs list preserving only kept chunks, re-numbering IDs
-    kept_set = set(kept_texts)
-    kept_docs = []
-    seen: set[int] = set()
-    j = 0
-    for doc in all_chunks:
-        # Match by identity via index (texts[i] == kept_texts[j] ordering)
-        txt = doc["answer"]
-        if txt in kept_set and id(txt) not in seen:
-            kept_docs.append({**doc, "id": f"real_{j:05d}"})
-            seen.add(id(txt))
-            j += 1
-    # Fallback: if identity trick fails (string interning), fall back to order
-    if not kept_docs:
-        for j2, txt in enumerate(kept_texts):
-            kept_docs.append({
-                **next(d for d in all_chunks if d["answer"] == txt),
-                "id": f"real_{j2:05d}",
-            })
+    # Rebuild docs list by indexing directly into all_chunks with the KEPT
+    # INDICES from deduplicate(), re-numbering IDs. No identity comparison,
+    # no text matching — see deduplicate()'s docstring for why that
+    # matters (a prior id()-based version of this rebuild silently
+    # reintroduced 142 exact-duplicate chunks that MinHash had correctly
+    # dropped).
+    kept_docs = [
+        {**all_chunks[i], "id": f"real_{j:05d}"}
+        for j, i in enumerate(kept_indices)
+    ]
 
     console.print(f"  Dropped {n_dropped} near-duplicates ({100*dedup_rate:.1f}%)")
     console.print(f"  Final KB entries: [bold green]{len(kept_docs)}[/bold green]")
