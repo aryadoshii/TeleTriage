@@ -1,31 +1,21 @@
 """
-Generative Tier — Phase 3 implementation.
+Generative Tier.
 
-Last-resort fallback.  When CAG misses AND RAG similarity is below threshold,
-we invoke an LLM to generate an answer from scratch (optionally grounded by
-the RAG near-misses — see llm_client.py design decision (1)).
+Last-resort fallback: when CAG misses AND RAG similarity is below
+threshold, invoke an LLM to generate an answer from scratch (optionally
+grounded by RAG near-misses — see llm_client.py's build_user_prompt()).
 
-BACKENDS (all free, tried in config.generative_tier.backend_order, default):
-  1. Groq:   Llama 3.3 70B — fast, requires GROQ_API_KEY_TIER3 (a SEPARATE
-             key from tier 2's RAG synthesis — see Secrets.
-             groq_api_key_tier3's docstring in backend/config.py). Falls
-             back to the SAME key as tier 2 (secrets.groq_api_key) if
-             GROQ_API_KEY_TIER3 isn't set, logged once at startup — see
-             __init__ below.
-  2. Gemini: gemini-flash-latest — requires GOOGLE_API_KEY. Uses an alias,
-             not a pinned version: gemini-2.0-flash AND gemini-2.5-flash
-             both 404'd for this account (confirmed 2026-08-11) — see
-             llm_client.py's GeminiClient docstring. Fallback-of-last-
-             resort here, NOT primary: its free tier is request-count
-             limited (5 req/min, 20 req/day observed), which is fine for
-             occasional fallback traffic but was measurably too tight
-             when it was briefly tried as tier 3's primary (2026-08-11).
+BACKENDS (config.generative_tier.backend_order, default order below):
+  1. Groq:   Llama 3.3 70B — requires GROQ_API_KEY_TIER3, a key separate
+             from tier 2's, so the two tiers don't share one TPM budget.
+             Falls back to tier 2's key if unset (logged once — __init__).
+  2. Gemini: gemini-flash-latest — fallback-of-last-resort only, not
+             primary (its free tier is request-count limited, too tight
+             for primary traffic).
   3. Local:  Qwen2.5-1.5B-Instruct — no key, slower, ~3 GB on disk
 
-Startup:
-  Backends are registered at __init__ time based on which API keys are
-  configured in .env AND config.generative_tier.backend_order.  No
-  network calls happen until the first answer().
+Backends are registered at __init__ time; no network calls until the
+first answer().
 """
 from __future__ import annotations
 
@@ -65,13 +55,9 @@ class GenerativeTier(BaseTier):
         self.min_confidence = 0.0
         self._cfg = cfg.generative_tier
 
-        # Tier 3 uses its OWN Groq key (separate 12,000 TPM pool from
-        # tier 2's RAG synthesis) — see Secrets.groq_api_key_tier3's
-        # docstring in backend/config.py. Falls back to tier 2's key if
-        # unset, so a fresh clone with only one Groq key still works,
-        # just without the isolation benefit. Logged ONCE here at
-        # __init__ time (not per-query — __init__ runs once per Router
-        # construction) so the tradeoff is visible without spamming logs.
+        # Tier 3's own Groq key (see Secrets.groq_api_key_tier3), falling
+        # back to tier 2's shared key if unset. Warns once here at
+        # __init__ (not per-query) rather than spamming logs.
         groq_key = cfg.secrets.groq_api_key_tier3
         if not groq_key and cfg.secrets.groq_api_key:
             groq_key = cfg.secrets.groq_api_key
@@ -96,9 +82,8 @@ class GenerativeTier(BaseTier):
     def answer(self, query: Query) -> TierResult:
         start = self._now()
 
-        # Retrieve any near-miss context that RAG surfaced but didn't
-        # trust enough to answer with directly.  See llm_client.py
-        # design decision (1) for why we use this even below threshold.
+        # Near-miss context RAG surfaced but didn't trust enough to
+        # answer with directly — see build_user_prompt()'s docstring.
         retrieved_context: list[dict] = query.metadata.get("retrieved_context", [])
         user_prompt = build_user_prompt(query.text, retrieved_context)
 
@@ -131,7 +116,6 @@ class GenerativeTier(BaseTier):
             answer=output.text,
             # Fixed 0.60 — honest acknowledgement that this is generated,
             # not retrieved from a verified knowledge base.
-            # See llm_client.py design decision (2) for upgrade paths.
             confidence=GENERATIVE_CONFIDENCE,
             latency_sec=self._now() - start,
             details={
@@ -140,9 +124,7 @@ class GenerativeTier(BaseTier):
                 "tokens_used": output.tokens_used,
                 "finish_reason": output.finish_reason,
                 "retrieved_context_docs": len(retrieved_context),
-                # See llm_client.py's GroqClient docstring ("CONFIRMED
-                # BUG") — non-zero means latency_sec above includes at
-                # least one retry, not pure inference time.
+                # Non-zero means latency_sec includes at least one retry.
                 "retry_count": output.retry_count,
             },
         )

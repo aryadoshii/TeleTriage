@@ -459,7 +459,7 @@ def _make_hits_with_docs(docs: list[dict]) -> list[Hit]:
 # Pure function, hand-built Hit objects — no model loading, no @slow marker.
 # This is what feeds TierResult.details["candidates"], which the router
 # forwards to the generative tier as grounding context (see
-# backend/generation/llm_client.py design decision (1)).
+# backend/generation/llm_client.py's build_user_prompt()).
 
 
 class TestBuildCandidates:

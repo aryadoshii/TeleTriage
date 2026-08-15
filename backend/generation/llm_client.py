@@ -1,136 +1,24 @@
 """
 Unified LLM client interface for the Generative Tier.
 
-━━━ DESIGN DECISIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-(1) Should the generative tier accept retrieved context from RAG as grounding
-    even when retrieval confidence was BELOW threshold — and why?
-
-    YES.  The reranker threshold gates whether RAG can answer ALONE, not
-    whether its candidates carry any useful signal.  A retrieval score of
-    0.45 (below the 0.5 threshold) still means the cross-encoder thinks that
-    document is plausibly related — it just isn't confident enough to surface
-    it as the authoritative answer.  Passing that document as grounding context
-    to the LLM is strictly better than generating from the LLM's training data
-    alone, because:
-
-      a) It anchors the LLM to the corpus's actual telecom terminology and
-         vendor-specific procedures rather than generic internet knowledge.
-      b) It dramatically reduces hallucinated specific commands or parameters,
-         since the model sees a real example of the correct domain language.
-      c) Cost is near-zero: the retrieval already ran, so we're just re-using
-         the candidates that were computed but didn't cross the bar.
-
-    WIRED (as of Phase 4): the implementation contract is callers populate
-    Query.metadata["retrieved_context"] with a list of dicts (at minimum
-    "question"/"answer" — build_user_prompt() reads only those two keys)
-    before calling GenerativeTier.answer(). When the field is absent the
-    tier generates from scratch — graceful degradation.
-
-    How it's actually wired, end to end:
-      1. backend/tiers/retrieval_tier.py reranks with top_k=3 (not just
-         the top_1 it needs to answer with) and packages all 3 into
-         TierResult.details["candidates"] as {"doc_id", "question",
-         "answer", "logit"} dicts, per-answer capped at 800 chars — on
-         BOTH the low-confidence delegation path and the confident-answer
-         path (the latter purely for eval/observability; the router never
-         gets a chance to forward it downstream in that case, since the
-         cascade already stopped).
-      2. backend/router.py's route() loop reads
-         result.details.get("candidates") after each tier that delegates,
-         accumulates it, and — because Query is a frozen Pydantic model
-         and can't be mutated mid-cascade — constructs a NEW Query with
-         metadata={**metadata, "retrieved_context": candidates} before
-         calling the next tier. The ORIGINAL Query object (whatever the
-         caller submitted) is preserved separately and is what ends up on
-         the final Response — the decorated, mid-cascade version never
-         escapes the router.
-      3. GenerativeTier.answer() reads query.metadata.get("retrieved_context", [])
-         (unchanged — this file's contract was already correct; only the
-         producer side was missing) and passes it to build_user_prompt().
-
-    Token budget:  context is truncated to MAX_CONTEXT_CHARS characters
-    (roughly 500 tokens) so it never crowds out the user query or the
-    model's instruction following.
-
-(2) What confidence value should we report for generative output, and what
-    are the tradeoffs of each approach?
-
-    We use FIXED 0.60 for Phase 3.  The options and their tradeoffs:
-
-    Option A — Fixed value (0.60, what we implement):
-      Honest: "I generated this from scratch; I don't know if it's right."
-      Tells the router the answer exists but shouldn't be treated as ground truth.
-      Simple.  Easy to calibrate later by comparing to human-verified answers.
-      Downside: no discrimination between a well-grounded answer (LLM had good
-      retrieved context) and a hallucination (LLM was flying blind).
-
-    Option B — Token log-probabilities:
-      Groq and Gemini expose per-token logprobs.  Average them and exponentiate.
-      Problem: high logprob means the model is confident in its generation,
-      NOT that the answer is correct.  A confidently wrong answer (e.g. a
-      plausible but fabricated vendor CLI command) scores just as high as a
-      correct one.  Misleading — worse than a fixed value.
-
-    Option C — Self-consistency (generate N times, measure agreement):
-      Generate 3-5 responses, embed them, measure pairwise cosine similarity.
-      High agreement → higher confidence.  Works well empirically.
-      Downside: 3-5× API cost and latency.  Not acceptable for interactive use.
-      Candidate for Phase 4 offline evaluation, not Phase 3 real-time.
-
-    Option D — LLM-as-judge:
-      Second model call: "Rate the correctness of this answer 1-5."
-      Surprisingly effective proxy for accuracy.  Adds ~200 ms latency.
-      Susceptible to the judge model's own biases.  Viable in Phase 4.
-
-    Upgrade path: confidence can be updated post-generation in details dict;
-    Phase 4 evaluation harness can learn a calibration mapping from fixed
-    0.60 to per-query estimates using BERTScore against a reference set.
-
-━━━ CONCEPTS IN THIS FILE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Temperature and why 0.2 for fault triage:
-  Temperature scales the logit distribution before sampling:
-      p(token) ∝ exp(logit / T)
-  T=1.0 → unmodified distribution (default).
-  T→0   → deterministic argmax (always the most probable token).
-  T→∞   → uniform distribution (random token).
-  For troubleshooting, we want CONSISTENT, REPRODUCIBLE advice.
-  An engineer asking the same question twice should get the same steps.
-  T=0.2 sharpens the distribution without fully eliminating variance
-  (T=0 can trap the model in repetitive loops on some architectures).
-
-System vs user prompts:
-  System prompt sets ROLE and FORMAT — it's the permanent context.
-  User prompt carries the QUERY — it changes every call.
-  Modern instruction-tuned models (Llama, Gemini) were trained with
-  this structure; respecting it gives better instruction-following.
-
-Retry logic — exponential backoff:
-  Transient failures (5xx, connection resets) are common on free API tiers.
-  Naive immediate retry hammers the server and burns rate-limit quota.
-  Actual behaviour (GroqClient, GeminiClient — same MAX_RETRIES/
-  BASE_WAIT_SEC pattern in both): MAX_RETRIES=3 attempts total, waiting
-  BASE_WAIT_SEC * 2**attempt between them — 1s after the first failure,
-  2s after the second. The sleep is guarded (`if attempt < MAX_RETRIES -
-  1`) so the third, final attempt never sleeps before giving up — there's
-  nothing left to retry into once the loop is about to exit, so a 4s wait
-  there would just add latency with no retry to show for it. No jitter,
-  no explicit time cap: the ceiling is MAX_RETRIES itself, not a duration.
-
-Backend fallback chain:
-  FallbackClient tries backends in whatever order make_llm_client()'s
-  `backend_order` param specifies — see that function's docstring.
-  NOT a single fixed Groq → Gemini → LocalQwen chain: tier 2 (RAG
-  synthesis) and tier 3 (closed-book fallback) are configured with
-  DIFFERENT primaries (config.yaml's retrieval_tier.backend_order vs
-  generative_tier.backend_order) specifically so they draw from separate
-  provider quotas instead of silently competing for one shared budget.
-  Any exception from a backend → log it and try the next one in that
-  tier's order. LocalQwen always succeeds (if the model file is
-  downloaded), so as long as it's included in the order it acts as the
-  ultimate safety net.  The tradeoff: 1.5B parameter model vs 70B —
-  quality will be lower, but an answer is better than a crash.
+Design notes:
+  - Below-threshold RAG context is still passed to the generative tier as
+    grounding (Query.metadata["retrieved_context"]) — a reranker score
+    too low to answer alone can still anchor the LLM to real corpus
+    terminology and reduce hallucinated specifics, at near-zero extra
+    cost since retrieval already ran. See build_user_prompt().
+  - Confidence is a fixed 0.60 for all generative output: an honest
+    "generated, not verified" signal. Token logprobs measure confidence,
+    not correctness; self-consistency/LLM-as-judge approaches cost 3-5x
+    latency, too slow for interactive use.
+  - Temperature 0.2 (not 0): sharpens the output distribution for
+    consistent, reproducible troubleshooting steps without the
+    repetitive-loop failure mode T=0 can trigger on some models.
+  - GroqClient and GeminiClient share the same retry shape: MAX_RETRIES=3,
+    wait = BASE_WAIT_SEC * 2**attempt (1s, then 2s). The final attempt
+    never sleeps before raising — no retry follows it. No jitter, no cap.
+  - Backend fallback order is per-tier (not one fixed chain) — see
+    make_llm_client()'s `backend_order` param.
 """
 from __future__ import annotations
 
@@ -146,8 +34,7 @@ logger = logging.getLogger(__name__)
 # own reasoning in a 2048-token context window.
 MAX_CONTEXT_CHARS = 2000
 
-# Fixed confidence for all generative output in Phase 3.
-# See design decision (2) above for tradeoffs.
+# Fixed confidence for all generative output — see module docstring.
 GENERATIVE_CONFIDENCE = 0.60
 
 
@@ -167,13 +54,8 @@ class GenerationOutput:
     finish_reason: str      # "stop", "length", or backend-specific value
     model: str              # model name as reported by the backend
     backend: str            # "groq", "gemini", or "local"
-    # Number of GroqClient-level retries this call needed before
-    # succeeding (0 = succeeded on the first attempt). See GroqClient's
-    # docstring — this used to be unmeasurable: the groq SDK's OWN
-    # internal retry (its default max_retries=2) absorbed 429s silently,
-    # so a call could take 20+ seconds with zero signal anywhere that a
-    # retry happened. Always 0 for Gemini/local for now — only GroqClient
-    # has ever exhibited this specific silent-retry behaviour.
+    # Retries this call needed before succeeding (0 = first attempt).
+    # Always 0 for Gemini/local — only GroqClient's retry loop counts it.
     retry_count: int = 0
     raw_response: Any = field(default=None, repr=False)  # for debugging
 
@@ -221,14 +103,9 @@ class GroqClient:
     """
     Groq Cloud client — Llama 3.3 70B on dedicated inference hardware.
 
-    Free tier: 30 req/min, 500k tokens/day on llama-3.3-70b-versatile.
-    Fastest inference of the three backends (~200–400 ms for 512 tokens).
-    NOTE: other models on this same account can have MUCH lower limits —
-    llama-3.1-8b-instant (tier 2's synthesis model) was measured at just
-    6000 TPM (tokens per minute) via the x-ratelimit-limit-tokens response
-    header. That's roughly 2-3 of tier 2's synthesis calls before hitting
-    the ceiling, not the 30 req/min figure above (which is a per-model,
-    per-request limit, not a token budget, and doesn't apply here).
+    Free tier: 30 req/min, 500k tokens/day, 12,000 TPM on
+    llama-3.3-70b-versatile. Fastest inference of the three backends
+    (~200-400ms for 512 tokens).
 
     Retry policy:
       - InternalServerError / APIConnectionError / APITimeoutError:
@@ -237,19 +114,10 @@ class GroqClient:
         can switch to the next backend.
       - AuthenticationError: misconfigured key — raise immediately.
 
-    CONFIRMED BUG (fixed here): the `groq` SDK constructs its underlying
-    HTTP client with max_retries=2 BY DEFAULT. That's a SEPARATE retry
-    layer, below and invisible to the retry loop in generate() below — a
-    429 hit inside the SDK's own transport gets silently retried there
-    (honouring the server's Retry-After header) before EVER raising an
-    exception this class could see, log, or count. Measured effect: an
-    identical call repeated 4x took 442ms / 374ms / 8458ms / 21533ms, with
-    NO warning logged anywhere, and GenerationOutput indistinguishable
-    from a normal fast call — meaning TierResult.latency_sec in
-    production could be silently inflated by 20-50x with zero diagnostic
-    signal. Passing max_retries=0 below disables the SDK's hidden retry
-    entirely, so every retry that happens is the one in generate() below —
-    logged via logger.warning AND counted in GenerationOutput.retry_count.
+    Constructed with max_retries=0 (below) to disable the `groq` SDK's
+    own hidden transport-level retry, which otherwise silently retries
+    429s before this class's retry loop ever sees, logs, or counts them —
+    every retry that happens is this class's own, in generate() below.
     """
 
     MAX_RETRIES = 3
@@ -259,10 +127,7 @@ class GroqClient:
         if not api_key:
             raise BackendUnavailableError("GroqClient: api_key is empty")
         from groq import Groq
-        # max_retries=0: see "CONFIRMED BUG" above. Without this, a 429
-        # can be silently retried by the SDK's own transport layer before
-        # this class ever gets a chance to see, log, or count it.
-        self._client = Groq(api_key=api_key, max_retries=0)
+        self._client = Groq(api_key=api_key, max_retries=0)  # see class docstring
         self._model = model
 
     def generate(
@@ -306,13 +171,8 @@ class GroqClient:
                     raw_response=completion,
                 )
             except RateLimitError as exc:
-                # Rate limit → don't retry this backend, let FallbackClient
-                # switch. (exc carries a retry-after hint from Groq, e.g.
-                # "Rate limit reached... limit 6000... try again in 12s" —
-                # not consumed here; a smarter same-backend wait-and-retry
-                # using that value would be a reasonable future change,
-                # but isn't what was asked for — this preserves the
-                # existing fallback-on-rate-limit behaviour unchanged.)
+                # Rate limit → not transient for THIS backend, let
+                # FallbackClient switch instead of retrying in place.
                 raise BackendUnavailableError(f"Groq rate limit: {exc}") from exc
             except (InternalServerError, APIConnectionError, APITimeoutError) as exc:
                 last_exc = exc
@@ -336,26 +196,10 @@ class GeminiClient:
     """
     Google Gemini (flash tier) via the google-genai SDK (v1+).
 
-    Uses the new google.genai package (google-generativeai is deprecated).
-
-    NOTE: this previously defaulted to gemini-2.0-flash, which was
-    retired — confirmed live (2026-08-11): the API returns 404 "This
-    model models/gemini-2.0-flash is no longer available." The obvious
-    fix (pin a current dated model like gemini-2.5-flash) was ALSO
-    confirmed broken for this account specifically: 404 "no longer
-    available to new users" — client.models.list() listing a model does
-    not mean generate_content will accept it for a given API key/account
-    tier. Version-pinned model names on free-tier Gemini are not
-    reliably stable; gemini-flash-latest (a Google-managed alias that
-    always points at their current flash model) is used instead
-    specifically to avoid re-hitting this exact class of bug. Tradeoff:
-    behavior can drift between demo runs if Google repoints the alias —
-    accepted here in favor of not silently 404ing again later.
-
-    Newer Gemini models default to spending some of max_output_tokens on
-    internal "thinking" before the visible answer — see the
-    thinking_config comment in generate() below; this cost real answer
-    truncation before it was set explicitly.
+    Uses gemini-flash-latest — a Google-managed alias, not a pinned
+    version. Pinned Gemini model names on free-tier accounts have gone
+    stale (404) more than once; the alias avoids re-hitting that at the
+    cost of behavior possibly drifting if Google repoints it.
 
     Retry policy: ServerError (5xx) → retry with backoff.
     ClientError (4xx including quota) → raise immediately for fallback.
@@ -394,17 +238,12 @@ class GeminiClient:
                         system_instruction=system,
                         max_output_tokens=max_tokens,
                         temperature=temperature,
-                        # Gemini's newer models "think" before answering,
-                        # and thinking tokens are drawn from the SAME
-                        # max_output_tokens budget as the visible answer
-                        # (no separate allowance) — confirmed live
-                        # (2026-08-11): at the default model + this file's
-                        # 512-token production budget, thinking consumed
-                        # the entire budget and the visible answer came
-                        # back truncated to ~80 characters with
-                        # finish_reason=MAX_TOKENS, not an error, just a
-                        # silently useless response. MINIMAL keeps enough
-                        # budget free for a real answer at 512 tokens.
+                        # Newer Gemini models spend part of max_output_tokens
+                        # on internal "thinking" before the visible answer —
+                        # at default thinking level this can consume the
+                        # whole budget and truncate the real answer to
+                        # nothing. MINIMAL keeps enough budget free to
+                        # actually answer.
                         thinking_config=gtypes.ThinkingConfig(
                             thinking_level=gtypes.ThinkingLevel.MINIMAL
                         ),
@@ -449,19 +288,15 @@ class GeminiClient:
 
 # ─── Local Qwen backend ───────────────────────────────────────────────────────
 
-# Default subprocess timeout for local inference. Generous because CPU
-# inference (the common case — most dev/deploy environments here have no
-# GPU) can genuinely take tens of seconds, on top of a cold model load
-# every call (see LocalQwenClient's docstring for why nothing persists
-# between calls). Configurable per-instance via LocalQwenClient(timeout_sec=...).
+# Generous timeout: CPU inference plus a cold model load every call (see
+# LocalQwenClient docstring) can genuinely take tens of seconds.
+# Configurable per-instance via LocalQwenClient(timeout_sec=...).
 _LOCAL_QWEN_TIMEOUT_SEC = 90.0
 
-# Runs in an ISOLATED subprocess (via `sys.executable -c _LOCAL_QWEN_WORKER_SCRIPT`)
-# — same invocation shape as backend/evaluation/evaluator.py's
-# _bertscore_subprocess(): stdin JSON in, stdout JSON out, nothing else on
-# stdout. Kept as one big inline script (not a separate worker .py file) to
-# match that existing precedent exactly — this codebase should have ONE
-# pattern for process-isolated model inference, not two.
+# Inline script run via `sys.executable -c` in an isolated subprocess —
+# same stdin-JSON-in/stdout-JSON-out shape as evaluator.py's
+# _bertscore_subprocess(), the one other place this codebase isolates
+# model inference this way.
 _LOCAL_QWEN_WORKER_SCRIPT = """
 import json
 import sys
@@ -507,45 +342,25 @@ class LocalQwenClient:
     Local Qwen2.5-1.5B-Instruct via HuggingFace transformers, run in an
     ISOLATED SUBPROCESS for every call — never loaded in this process.
 
-    WHY SUBPROCESS ISOLATION (not lazy-loading in-process, memory limits,
-    or torch.multiprocessing sharing tricks): this is the last-resort
-    backend, reached only after Groq AND Gemini have both failed — which
-    is exactly when tier 2's BGE-small embedder and bge-reranker-base
-    cross-encoder are typically ALREADY loaded in this same process (RAG
-    synthesis loads both before ever calling an LLM). Loading a THIRD
-    PyTorch model (Qwen) in-process alongside them reproduces the exact
-    multi-model coexistence conflict that backend/evaluation/evaluator.py's
-    _bertscore_subprocess() already isolates BERTScore against — see that
-    method's docstring. This isn't theoretical: the in-process version of
-    this class SIGSEGV'd during a real eval run (2026-08-12) when Groq and
-    Gemini were both exhausted and Qwen loaded in-process next to the
-    already-loaded embedder/reranker. Subprocess isolation is the fix that
-    already works in this codebase for this exact failure mode — attempts
-    to make three PyTorch models coexist safely in one process are not
-    revisited here because that's the thing already proven not to work
-    reliably.
+    Why: this backend is only reached after Groq AND Gemini have both
+    failed, which is exactly when tier 2's BGE-small embedder and
+    bge-reranker-base cross-encoder are typically already loaded in this
+    same process. A third PyTorch model coexisting with them there has
+    caused a real SIGSEGV crash — the same class of conflict
+    evaluator.py's _bertscore_subprocess() isolates against. Subprocess
+    isolation is the fix; don't revert to a persistent in-process
+    pipeline without re-solving that crash first.
 
-    Tradeoff: every call now pays real process-spawn + cold-model-load
-    overhead (roughly 1-3s just to start Python and reload the model,
-    before inference even begins) since nothing persists between calls —
-    that's the whole point: the subprocess's memory, including the loaded
-    model, is torn down when it exits, so it can never coexist with
-    whatever's loaded in the parent process. Acceptable specifically
-    BECAUSE this only fires as a last resort (after Groq AND Gemini both
-    fail), not on the hot path. Do not "optimize" this back to a
-    persistent in-process pipeline without re-solving the coexistence
-    crash first.
+    Tradeoff: every call pays real process-spawn + cold-model-load
+    overhead (~1-3s) since nothing persists between calls — acceptable
+    because this only fires as a last resort, not on the hot path.
 
-    No API key required — runs entirely on-device.  Model weights (~3 GB)
-    are downloaded from HuggingFace Hub on first use and cached locally
-    (by the subprocess's transformers/huggingface_hub install, same cache
-    dir as any other process on the machine — the isolation is about
-    process/memory boundaries, not the on-disk model cache).
+    No API key required — runs entirely on-device. Model weights (~3 GB)
+    download from HuggingFace Hub on first use and cache locally.
 
-    Quality note:
-      1.5B parameters vs 70B (Groq Llama) — noticeably lower quality for
-      complex multi-step troubleshooting.  This tier exists for offline use
-      or when all cloud backends fail, not for primary production traffic.
+    Quality note: 1.5B params vs 70B (Groq) — noticeably weaker on
+    complex multi-step troubleshooting. Last-resort fallback, not
+    primary traffic.
     """
 
     def __init__(
@@ -575,11 +390,8 @@ class LocalQwenClient:
             "temperature": temperature,
         }
 
-        # Any failure here is mapped to BackendUnavailableError — the same
-        # exception GroqClient/GeminiClient raise on failure — so
-        # FallbackClient's existing "any exception -> try the next
-        # backend" handling doesn't need to know a subprocess is involved
-        # at all; the boundary is invisible above this method.
+        # Mapped to BackendUnavailableError (same as Groq/Gemini) so the
+        # subprocess boundary is invisible to FallbackClient.
         try:
             result = subprocess.run(
                 [sys.executable, "-c", _LOCAL_QWEN_WORKER_SCRIPT],
@@ -638,12 +450,8 @@ class FallbackClient:
         if not clients:
             raise ValueError("FallbackClient requires at least one backend client.")
         self._clients = clients
-        # Identifies which tier's chain this is in logs — e.g. "tier2-synthesis"
-        # vs "tier3-generative". Previously this warning was hardcoded to say
-        # "Generative tier" unconditionally, which became actively misleading
-        # once tier 2 also started using FallbackClient: a tier 2 fallback
-        # event logged as if it were tier 3's, making it look like tier 3 was
-        # still Groq-primary when debugging exactly this kind of contention.
+        # Identifies which tier's chain this is in logs, e.g.
+        # "tier2-synthesis" vs "tier3-generative".
         self._name = name
 
     def generate(
@@ -705,55 +513,22 @@ def make_llm_client(
     """
     Build a FallbackClient trying backends in `backend_order`, left to right.
 
-    `backend_order` is authoritative for BOTH which backends are included
-    AND the order they're tried in — a name absent from the list is
-    excluded even if its API key is set (e.g. `["gemini", "local"]`
-    deliberately disables Groq for a tier without touching .env). Cloud
-    backends (groq/gemini) are additionally skipped if their API key is
-    empty, or if construction fails (missing SDK, bad key format, etc.);
-    "local" (LocalQwenClient) needs no key and is only skipped if omitted
-    from `backend_order`.
+    `backend_order` is authoritative for both which backends are included
+    and the order they're tried — a name absent from the list is excluded
+    even if its API key is set. Cloud backends are additionally skipped
+    if their key is empty or construction fails; "local" needs no key and
+    is only skipped by omitting it from `backend_order`.
 
-    WHY THIS PARAMETER EXISTS (not just per-tier model names): tier 2's
-    RAG synthesis (backend/tiers/retrieval_tier.py) and tier 3's
-    closed-book fallback (backend/tiers/generative_tier.py) both used to
-    default to Groq as primary, authenticated with the SAME key. That
-    meant two supposedly-independent cascade stages silently shared ONE
-    Groq TPM budget — heavy tier 2 traffic could starve tier 3's fallback
-    capacity and vice versa. Not a rate-limit inconvenience; an
-    architectural flaw. Confirmed via scripts/run_eval.py (2026-08-11):
-    9/20 queries fell back to Gemini in one unpaced run purely from both
-    tiers hitting llama-3.3-70b-versatile's 12,000 TPM limit together.
+    Tier 2 and tier 3 each call this with their OWN Groq API key
+    (groq_api_key vs groq_api_key_tier3 — selected by the caller, not
+    this function) so they draw from independent TPM pools instead of
+    sharing one. See GenerativeTier.__init__ for the key-selection logic
+    and config.yaml's backend_order comments for why this exists.
 
-    First fix attempt: give each tier its own `backend_order`, with tier 3
-    reordered to Gemini-primary — same key-per-tier idea, but decoupling
-    by PROVIDER instead. That measurably reduced Groq-side contention but
-    traded it for a worse problem: Gemini's free tier turned out to be
-    request-count limited (5 req/min, 20 req/day observed), fine as an
-    occasional fallback but exhausted almost immediately once it became a
-    tier's PRIMARY under real traffic — partially recreating the
-    contention it was meant to fix. Reverted.
+    client_name: identifies this chain in logs, e.g. "tier2-synthesis" vs
+    "tier3-generative" (see FallbackClient).
 
-    Actual shipped fix: both tiers keep `backend_order` = [groq, gemini,
-    local] (same provider order), but authenticate with DIFFERENT Groq
-    keys — tier 2 uses Secrets.groq_api_key, tier 3 uses Secrets.
-    groq_api_key_tier3 (selected at the GenerativeTier.__init__ call
-    site, not inside this function — see its docstring). Two keys under
-    Groq draw from independent TPM pools, so tier 2 and tier 3 stop
-    competing for one budget without giving up Groq's speed/reliability
-    as the primary for both. Gemini and local remain each tier's OWN
-    fallback-of-last-resort behind Groq, never a primary. See config.yaml's
-    generative_tier.backend_order comment for the full dated history.
-
-    client_name: identifies this chain in logs (e.g. "tier3-generative" vs
-    "tier2-synthesis") — see FallbackClient's docstring for why this
-    matters: its fallback/failure warnings used to be hardcoded to say
-    "Generative tier" unconditionally, which became actively misleading
-    once tier 2 also started building a FallbackClient.
-
-    Usage (tier 3 — note groq_api_key_tier3, NOT groq_api_key; see
-    GenerativeTier.__init__ for the real fallback-to-shared-key logic
-    omitted here for brevity)::
+    Usage (tier 3)::
 
         from backend.config import get_config
         cfg = get_config()
@@ -818,11 +593,9 @@ def build_user_prompt(query_text: str, retrieved_context: list[dict]) -> str:
     Construct the user-turn prompt, optionally grounding it with retrieved docs.
 
     retrieved_context: list of dicts from RAG candidates that did not cross
-    the confidence threshold but still carry relevant signal — only the
-    "question" and "answer" keys are read here; the "doc_id"/"logit" keys
-    RetrievalTier._build_candidates() also includes are ignored (they're
-    for eval/observability, not prompt construction). See design
-    decision (1) above.
+    the confidence threshold but still carry relevant signal (see module
+    docstring) — only "question"/"answer" are read; "doc_id"/"logit" are
+    for eval/observability, not prompt construction.
 
     Context is truncated to MAX_CONTEXT_CHARS to respect token budgets.
     """

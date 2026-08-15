@@ -1,118 +1,13 @@
 """
-TeleTriage Evaluation Harness — Phase 4.
+TeleTriage Evaluation Harness.
 
-System: BGE-small-en-v1.5 + bge-reranker-base + Groq llama-3.3-70b-versatile
-Eval set: 20 held-out queries (eval_001–eval_020), data/sample_kb.jsonl (30 docs)
-BERTScore model: distilbert-base-uncased
+Runs the full router over a held-out eval set and reports ROUGE-L,
+BERTScore, and latency percentiles, overall and per-tier. BERTScore
+runs in a subprocess (see _bertscore_subprocess) to avoid a real SIGSEGV
+from multiple PyTorch models coexisting in one process.
 
-━━━ RUN A — conservative thresholds (2026-05-02) ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Config: min_rerank_score=0.5 (logit)  min_confidence=0.70
-
-  Tier Distribution
-  ─────────────────────────────────────────
-  cache          0 queries  (0.0%)
-  retrieval      0 queries  (0.0%)    ← reranker logits < 0.5 for all queries
-  generative    20 queries  (100.0%)
-
-  Metric              ROUGE-L   BERTScore    n
-  ─────────────────────────────────────────────
-  Overall (mean)        0.153      0.790    20
-  Overall (median)      0.147      0.788
-  ─────────────────────────────────────────────
-    generative tier      0.153      0.790    20
-
-  Latency (end-to-end)
-  ─────────────────────────────────────────
-  p50:    1458.0 ms    (Groq round-trip for every query)
-  p95:    1734.4 ms
-  p99:    1775.3 ms
-  mean:   1455.2 ms
-
-━━━ RUN B — relaxed thresholds (2026-05-03) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Config: min_rerank_score=0.0 (logit)  min_confidence=0.50
-
-  Tier Distribution
-  ─────────────────────────────────────────
-  cache          0 queries  (0.0%)
-  retrieval     20 queries  (100.0%)   ← all queries now served from KB
-  generative     0 queries  (0.0%)
-
-  Metric              ROUGE-L   BERTScore    n
-  ─────────────────────────────────────────────
-  Overall (mean)        0.123      0.815    20
-  Overall (median)      0.113      0.813
-  ─────────────────────────────────────────────
-    retrieval tier       0.123      0.815    20
-
-  Tier match rate: 15/20 (75%)
-
-  Latency (end-to-end)
-  ─────────────────────────────────────────
-  p50:     162.8 ms    (BGE + FAISS + cross-encoder, no Groq)
-  p95:     215.4 ms
-  p99:     425.9 ms
-  mean:    177.2 ms
-
-━━━ RUN C — calibrated threshold (2026-05-03) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Config: min_rerank_score=0.20 (logit)  min_confidence=0.50
-
-  Tier Distribution
-  ─────────────────────────────────────────
-  cache          0 queries  (0.0%)
-  retrieval      3 queries  (15.0%)   ← logits 0.231, 0.383, 0.579
-  generative    17 queries  (85.0%)   ← all with logit < 0.20
-
-  Metric              ROUGE-L   BERTScore    n
-  ─────────────────────────────────────────────
-  Overall (mean)        0.153      0.793    20
-  Overall (median)      0.157      0.789
-  ─────────────────────────────────────────────
-    retrieval tier       0.179      0.829     3
-    generative tier      0.148      0.787    17
-
-  Latency (end-to-end)
-  ─────────────────────────────────────────
-  p50:    1548 ms    (dominated by 17 Groq calls)
-  p95:    1870 ms
-  p99:    2126 ms
-  mean:   1393 ms
-  retrieval tier p50:  160 ms (n=3)
-  generative tier p50: 1613 ms (n=17)
-
-━━━ CALIBRATION CURVE — all three runs ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Config     min_logit  Ret%  Gen%   ROUGE-L  BERTScore  p50 latency
-  ─────────────────────────────────────────────────────────────────────
-  A strict     0.50      0%   100%    0.153     0.790     1458 ms
-  C calibrated 0.20     15%    85%    0.153     0.793     1548 ms
-  B relaxed    0.00    100%     0%    0.123     0.815      163 ms
-
-  Retrieval-only BERTScore (where logit ≥ threshold):
-    logit ≥ 0.20 (n=3):  BERT 0.804–0.842  mean 0.829
-    logit 0.00–0.20 (n=17 in Run B):  BERT 0.786–0.799  mean ~0.793
-    logit < 0    (not served):  below noise floor
-
-Key findings:
-  1. The logit > 0.20 boundary is real. Three queries with logits 0.231,
-     0.383, 0.579 score BERT ≥ 0.804 from retrieval. The 17 near-zero-logit
-     queries score 0.786–0.799 from retrieval — below the generative mean
-     (0.787). Retrieval only beats generative when the reranker is confident.
-  2. Run C overall BERTScore (0.793) is better than Run A (0.790) with only
-     3 queries flipped to retrieval. The three KB hits are high-quality;
-     the other 17 are correctly left to generative.
-  3. ROUGE-L stays flat at 0.153 across Runs A and C — the LLM answers the
-     same 17 queries both times; the 3 new retrieval answers have higher
-     ROUGE (0.179 mean) but are too few to move the aggregate.
-  4. Run B's BERTScore gain (0.790 → 0.815) came partly from true KB
-     coverage and partly from noise — low-logit retrieval answers scoring
-     marginally above generative by luck of the metric, not KB quality.
-  5. min_rerank_score=0.20 is the calibrated production setting: accepts
-     retrievals the reranker believes in (logit > 0.20, sigmoid > 0.55),
-     defers everything else to Groq. Backed by three measured data points.
-  6. BERTScore computed via subprocess isolation (avoids macOS PyTorch
-     semaphore SIGSEGV when BGE-small + bge-reranker + distilbert coexist).
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For calibration runs, thresholds, and investigation history, see
+docs/CALIBRATION.md — this docstring only covers what the code does.
 """
 from __future__ import annotations
 
@@ -249,14 +144,11 @@ class Evaluator:
           4. Aggregate per-tier and overall statistics.
           5. Return a structured EvalReport.
 
-        pacing_sec: seconds to sleep between queries (default 0 = no
-        pacing, the old behaviour). Queries whose answer involves an LLM
-        call (generative tier, or retrieval tier's RAG synthesis) share
-        Groq's per-model TPM budget — firing 20 back-to-back with no
-        pacing measurably throttles partway through and silently falls
-        back to Gemini for the rest (confirmed: 9/20 fell back in an
-        unpaced run). Pacing here mirrors the fix already applied to
-        scripts/eval_synthesis_latency.py for the same underlying issue.
+        pacing_sec: seconds to sleep between queries (default 0 = none).
+        LLM-routed queries (generative tier, or retrieval tier's RAG
+        synthesis) share a per-model Groq TPM budget — firing many calls
+        back-to-back can throttle partway through and fall back to
+        Gemini for the rest. Pacing reduces that.
         """
         from backend.config import get_config
 

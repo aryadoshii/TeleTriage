@@ -837,7 +837,7 @@ if "Overview" in page:
         "<div style='font-size:2.2rem;font-weight:800;line-height:1.2;letter-spacing:-0.03em;color:#f1f5f9;margin-bottom:0.9rem;'>"
         "3GPP specs are the standards every network is built to comply with —<br>"
         "<span style='color:#82C8E5;'>and they're nearly unsearchable.</span></div>"
-        "<div style='font-size:1rem;color:#94a3b8;max-width:760px;line-height:1.8;'>"
+        "<div style='font-size:1rem;color:#94a3b8;line-height:1.8;'>"
         "They're distributed as Word documents running to 1,000+ pages of dense normative prose, heavily "
         "cross-referenced, with no good search. When a network operations engineer sees an unfamiliar reject "
         "cause in a log at 2am, finding out what it means requires grepping a 900-page document — and often "
@@ -855,7 +855,7 @@ if "Overview" in page:
         <div style="font-size: 1.5rem; font-weight: 700; color: #f1f5f9; margin-bottom: 0.5rem; letter-spacing: -0.02em;">
             Describe the symptom in plain language. Get an answer grounded in the actual spec text — with a citation.
         </div>
-        <div style="font-size: 0.95rem; color: #94a3b8; max-width: 760px; line-height: 1.8; margin-bottom: 1.5rem;">
+        <div style="font-size: 0.95rem; color: #94a3b8; line-height: 1.8; margin-bottom: 1.5rem;">
             Type what you're seeing, the way you'd describe it to a colleague — a fault description, a reject
             cause, a log line. TeleTriage searches the indexed specifications, finds the passages that actually
             address it, and returns a structured answer that cites the exact spec and chunk it came from, so you
@@ -941,7 +941,7 @@ if "Overview" in page:
         <div style="font-size: 1.5rem; font-weight: 700; color: #f1f5f9; margin-bottom: 0.5rem; letter-spacing: -0.02em;">
             A three-tier cascade — each tier only answers what it can back up.
         </div>
-        <div style="font-size: 0.88rem; color: #94a3b8; max-width: 760px; line-height: 1.7; margin-bottom: 1.5rem;">
+        <div style="font-size: 0.88rem; color: #94a3b8; line-height: 1.7; margin-bottom: 1.5rem;">
             TeleTriage tries the cheapest, most verifiable path first, and escalates only when confidence falls
             below an empirically measured threshold — not a guessed one.
         </div>

@@ -4,22 +4,13 @@ Retrieval-Augmented Generation (RAG) Tier — Phase 2 implementation.
 Tier 2 retrieves the top-scoring chunks from the corpus (hybrid BM25 +
 dense search, fused with RRF, reranked with a cross-encoder) and then
 SYNTHESIZES an answer from them via an LLM constrained to that retrieved
-context — genuine RAG, not extractive lookup.
+context — genuine RAG, not extractive lookup (an earlier design returned
+a matched KB entry's `answer` field verbatim; superseded).
 
-  Previous design (superseded): tier 2 returned the single best-matching
-  KB document's `answer` field VERBATIM. That only worked because a
-  parallel synth-QA pipeline (scripts/synth_qa.py + scripts/
-  build_synth_kb.py) existed just to manufacture pre-written, directly-
-  answerable Q&A pairs from raw spec chunks — expensive (LLM-rate-
-  limited generation), slow to grow (166 of 7,236 available chunks
-  covered after that pipeline's first runs), and fundamentally a
-  workaround for tier 2 not actually generating anything itself. That
-  pipeline is NOT deleted — scripts/synth_qa.py and
-  scripts/build_synth_kb.py remain in the repo as a documented
-  alternative corpus path (database/synth_kb.jsonl) — but it's no longer
-  on the critical path: tier 2 now runs directly over
-  database/real_kb.jsonl's 7,236 raw 3GPP chunks, no synthetic Q&A
-  manufacturing required.
+  scripts/synth_qa.py + scripts/build_synth_kb.py still exist as a
+  documented alternative corpus path (database/synth_kb.jsonl) but are
+  off the critical path — tier 2 runs directly over
+  database/real_kb.jsonl's raw 3GPP chunks, no synthetic Q&A needed.
 
 Architecture:
 
@@ -95,40 +86,25 @@ from backend.types import Query, TierName, TierResult
 # on their own before build_user_prompt even gets to apply its own cap.
 _CANDIDATE_ANSWER_CHARS = 800
 
-# Generation params for tier 2's synthesis call. Not config fields (unlike
-# synthesis_top_k/synthesis_model) — these are stable implementation
-# details of the synthesis prompt itself, not something a deployer tunes
-# per environment. Same low temperature as tier 3, same rationale: we
+# Generation params for tier 2's synthesis call — stable implementation
+# details of the prompt itself, not deployer-tunable (unlike
+# synthesis_top_k/synthesis_model). Same low temperature as tier 3: we
 # want consistent, reproducible troubleshooting advice, not creative
 # variation.
 _SYNTHESIS_MAX_TOKENS = 512
 _SYNTHESIS_TEMPERATURE = 0.2
 
-# Same model as tier 3 (see RetrievalTierConfig.synthesis_model in
-# backend/config.py) — NOT deliberately smaller/cheaper. It used to be
-# llama-3.1-8b-instant on the theory that synthesizing strictly from
-# provided context is easier than tier 3's open-domain reasoning and
-# doesn't need 70B-model depth, keeping the cascade cost-aware even
-# though tier 2 fires on every retrieval hit (the common case, not the
-# exception). Measured reality (scripts/eval_synthesis_latency.py,
-# 2026-08-11): that model's free-tier budget is only 6000 TPM, which
-# rate-limited 56% of synthesis calls outright at 5s between calls —
-# not viable for a demo-able system regardless of synthesis_top_k/
-# synthesis_chunk_chars tuning. The cost-tier distinction is given up
-# for now in favor of reliability; revisit if a higher-TPM tier or a
-# different small-model provider becomes available.
-# Structure mirrors backend/tiers/generative_tier.py's SYSTEM_PROMPT
-# exactly (root cause / diagnostic steps / remediation) — tier 2 and
-# tier 3 should look like the same engineer answered, whichever one
-# actually did. Without an explicit structure, the model's default
-# instinct with "here are some excerpts, answer the question" is to
-# summarize the excerpts one by one rather than synthesize a diagnosis —
-# observed live: it walked through all 5 excerpts in order ("Excerpt 2
-# states that... which implies..."), opened every paragraph with
-# "Excerpt N states", and never actually said why the fault happens or
-# what to check. The forbidden-phrasing rule below exists because
-# telling the model to "answer using the excerpts" wasn't sufficient by
-# itself to stop it narrating through them.
+# Same model as tier 3 (RetrievalTierConfig.synthesis_model), not a
+# smaller one — a cheaper model's free-tier TPM budget throttled too
+# often to be viable; see config.yaml's synthesis_model comment.
+#
+# Structure mirrors generative_tier.py's SYSTEM_PROMPT exactly (root
+# cause / diagnostic steps / remediation) so tier 2 and tier 3 read like
+# the same engineer answered. The forbidden-phrasing rule below exists
+# because without it, the model's default instinct is to summarize
+# excerpts one by one ("Excerpt 2 states that...") instead of
+# synthesizing a diagnosis — telling it to just "answer using the
+# excerpts" wasn't enough on its own to stop that.
 SYNTHESIS_SYSTEM_PROMPT = """You are a telecom network engineer diagnosing a fault using ONLY the \
 3GPP specification excerpts provided below.
 
@@ -159,26 +135,14 @@ so explicitly instead of guessing.
 def _build_candidates(reranked: list[Hit]) -> list[dict]:
     """
     Package up to 3 reranked candidates as grounding context for
-    downstream tiers.
+    downstream tiers — carried into the next tier's Query.metadata by
+    backend/router.py when retrieval's confidence gate isn't met.
 
-    Used by the generative tier when retrieval's own confidence gate
-    isn't met — see backend/generation/llm_client.py design decision (1)
-    and backend/router.py, which is what actually carries this from one
-    tier's TierResult into the next tier's Query.metadata.
-
-    Populated on BOTH of RetrievalTier.answer()'s return paths, not just
-    the delegation path — even when retrieval confidently answers on its
-    own (and the router therefore never reaches a next tier to hand this
-    to), the runner-up candidates are still useful for eval/observability
-    tooling inspecting why the winner won. Costs nothing to include
-    either way, since reranked already holds all the scored hits.
-
-    This doesn't change WHICH document answers: reranked[0] remains the
-    top candidate regardless of how many candidates rerank() was asked
-    for. It changes how many of the already-scored candidates get
-    exposed: the cross-encoder scores every fused candidate before
-    sorting and picking a winner, so asking for more back than the
-    minimum needed is free.
+    Populated on both of RetrievalTier.answer()'s return paths (not just
+    delegation) since the runner-ups are also useful for eval tooling
+    inspecting why the winner won, and cost nothing extra to include —
+    the cross-encoder already scored every fused candidate before
+    picking one.
     """
     return [
         {
@@ -202,19 +166,13 @@ def _build_synthesis_prompt(
     specific chunk.
 
     Deliberately labelled "[spec, chunk id]:", NOT "Excerpt N [...]:" —
-    an earlier version numbered them, and the model echoed that framing
-    straight back into its answers ("Excerpt 3 states...", walking
-    through excerpts in order instead of synthesizing). Removing the
-    ordinal numbering from the INPUT removes the stimulus that invited
-    it, on top of SYNTHESIS_SYSTEM_PROMPT's explicit prohibition — belt
-    and suspenders.
+    numbering them made the model echo that framing back into its
+    answers ("Excerpt 3 states..."); removing it (on top of
+    SYNTHESIS_SYSTEM_PROMPT's explicit prohibition) removed the stimulus.
 
     chunk_chars: per-chunk truncation. None (default) means no
-    truncation — scripts/scrape_data.py already bounds every chunk to
-    ~2048 chars. See RetrievalTierConfig.synthesis_chunk_chars and
-    scripts/eval_synthesis_latency.py, which measures the latency/
-    prompt-size tradeoff across values before picking a non-None one —
-    do not guess a value here.
+    truncation — chunks are already bounded to ~2048 chars at scrape
+    time. See RetrievalTierConfig.synthesis_chunk_chars.
     """
     def _chunk_text(hit: Hit) -> str:
         text = hit.doc.get("answer", "")
@@ -310,16 +268,11 @@ class RetrievalTier(BaseTier):
         # indexes predate manifest.json. Never raises on absence.
         self.index_manifest = load_index_manifest(index_dir)
 
-        # Synthesis LLM — reuses the SAME FallbackClient machinery as
-        # tier 3 (backend/generation/llm_client.py), same Groq-primary
-        # backend_order, but authenticates with cfg.secrets.groq_api_key
-        # — tier 3 (generative_tier.py) uses a SEPARATE key
-        # (groq_api_key_tier3) so the two tiers draw from independent
-        # 12,000 TPM pools instead of silently competing for one (see
-        # Secrets.groq_api_key_tier3's docstring in backend/config.py and
-        # make_llm_client()'s docstring for the full story). Groq/Gemini/
-        # local clients are constructed but make no network calls until
-        # generate() is actually invoked.
+        # Same FallbackClient machinery as tier 3, but authenticated with
+        # tier 2's OWN Groq key (cfg.secrets.groq_api_key) — tier 3 uses
+        # groq_api_key_tier3, a separate TPM pool. See Secrets.
+        # groq_api_key_tier3 in backend/config.py. No network calls
+        # happen until generate() is actually invoked.
         self._synthesis_client: FallbackClient = make_llm_client(
             groq_api_key=cfg.secrets.groq_api_key,
             google_api_key=cfg.secrets.google_api_key,
@@ -442,10 +395,9 @@ class RetrievalTier(BaseTier):
         except AllBackendsFailedError as exc:
             # Tier 2 isn't the last tier — unlike tier 3, it can safely
             # delegate rather than surface a hard error. Retrieval itself
-            # succeeded here; only synthesis failed, so let tier 3 take a
-            # fresh shot (it may even reuse these same candidates as
-            # grounding context via the router's retrieved_context wiring
-            # — see backend/router.py and llm_client.py design decision (1)).
+            # succeeded; only synthesis failed, so let tier 3 take a fresh
+            # shot (it may reuse these candidates as grounding context via
+            # the router's retrieved_context wiring — see router.py).
             return TierResult(
                 tier=self.tier_name,
                 answer=None,
@@ -478,11 +430,8 @@ class RetrievalTier(BaseTier):
                 "synthesis_backend": output.backend,
                 "synthesis_model": output.model,
                 "synthesis_tokens_used": output.tokens_used,
-                # See llm_client.py's GroqClient docstring ("CONFIRMED
-                # BUG") — before that fix, a retry could inflate
-                # latency_sec above by 20-50x with zero way to tell from
-                # outside. Non-zero here means the reported latency
-                # includes at least one retry, not pure inference time.
+                # Non-zero means latency_sec above includes at least one
+                # retry, not pure inference time (see GroqClient).
                 "synthesis_retry_count": output.retry_count,
             },
         )

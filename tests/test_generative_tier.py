@@ -411,16 +411,10 @@ class TestGroqClientUnit:
 
     def test_constructs_sdk_client_with_max_retries_zero(self):
         """
-        CONFIRMED BUG regression test: the groq SDK's Groq(...) client
-        defaults to max_retries=2 at the HTTP transport layer — a retry
-        mechanism entirely separate from (and invisible to) the retry
-        loop in generate() above. Measured live: an identical call
-        repeated 4x took 442ms/374ms/8458ms/21533ms with NO warning
-        logged and NO way to tell a retry happened — the SDK silently
-        absorbed 429s using the server's Retry-After header before ever
-        raising to this class. Passing max_retries=0 disables that
-        hidden layer so THIS class's own (logged, counted) retry loop is
-        the only one that can ever fire.
+        Regression test: the groq SDK's own HTTP transport defaults to
+        max_retries=2, a retry layer invisible to generate()'s own retry
+        loop. max_retries=0 disables it so this class's (logged, counted)
+        retry loop is the only one that can ever fire.
         """
         from backend.generation.llm_client import GroqClient
 
@@ -915,11 +909,11 @@ class TestRouterCandidatePropagation:
     """
     Router.route() must translate a delegating tier's
     TierResult.details["candidates"] into the NEXT tier's
-    Query.metadata["retrieved_context"] — this is the wiring that makes
-    backend/generation/llm_client.py design decision (1) actually take
-    effect in production. Both tiers are mocked (no real retrieval index,
-    no real LLM call) so this stays in the fast suite; it verifies the
-    router's propagation logic itself, not either tier's internals.
+    Query.metadata["retrieved_context"] — the wiring behind
+    build_user_prompt()'s below-threshold grounding (llm_client.py).
+    Both tiers are mocked (no real retrieval index, no real LLM call) so
+    this stays in the fast suite; it verifies the router's propagation
+    logic itself, not either tier's internals.
     """
 
     def _mock_tier(self, *, tier_name, answer, confidence, details=None, delegates):
